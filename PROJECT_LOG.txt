@@ -1,0 +1,306 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║          Excel 汇总表自动处理工具 - 完整项目记录                              ║
+║                   2026-04-08 至 2026-05-06                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 一、项目概述                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+■ 工具信息
+  名称    ：report_maker.py
+  功能    ：自动化制作工程监测报表（期数递增 + 日期递增 + 天气更新 + PDF导出）
+  工作目录：F:\myproject\rpt-maker\
+  执行命令：echo 5,1,2,3,1,4 | python report_maker.py
+           （格式：总期数,第1期间隔,第2期间隔,...）
+
+■ 文件对应关系（历史沿革）
+  test.py              → report_maker.single.py   （单期版，最原始版本）
+  run_all.py           → report_maker.manual.py    （批量版，step5 需手动）
+  run_all1.py          → report_maker.py           （当前在用，step5 全自动）
+  run_all1_backup.py   → report_maker.backup.py    （备份）
+
+■ 六步主流程
+  Step 1  复制目录（期数+1，日期+自定义天数）
+  Step 2  删除目录下所有 PDF 文件
+  Step 3  修改 Excel 封面（期数、天气）
+  Step 4  处理 Excel 日期列（全部用COM完成，触发RANDBETWEEN重算）
+  Step 5  自动处理外部引用（pywinauto + COM混合方案）
+  Step 6  Excel 转 PDF（COM 接口 ExportAsFixedFormat）
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 二、完整时间线（逐日记录）                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-04-08 至 2026-04-21 』项目前期开发
+══════════════════════════════════════════════════════════════════════════════
+
+  （内容参考原记录，此处略）
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-04-22 』第十五天 - WPS 兼容 + 代码质量优化
+══════════════════════════════════════════════════════════════════════════════
+
+【上午】v3.6 WPS 兼容性修复
+
+  ■ 问题发现：
+    - WPS 环境下 excel.Visible = False 时 pywinauto 无法点击"更新"对话框按钮
+    - Office 正常，WPS 不行
+    - 原因：WPS 对话框依赖前台窗口，隐藏时 C 键消息被主窗口吃掉
+
+  ■ 解决方案：
+    - 新增 EXCEL_TYPE + EXCEL_VISIBLE 配置
+    - WPS 必须 EXCEL_VISIBLE = True（窗口闪一下但能自动化）
+    - Office 用 EXCEL_VISIBLE = False（完全静默）
+
+【下午】v3.7 代码质量优化
+
+  ■ 重构内容：
+    1. 新建 utils.py 共享模块：
+       - IDE 环境检测代码抽出来
+       - 颜色输出函数共享
+       - 减少 report_maker.py 和 run_queue.py 的重复代码
+
+    2. with_retry 装饰器：
+       - 天气 API 三个函数的重试逻辑抽成装饰器
+       - 减少约 45 行重复代码
+
+    3. main() 函数拆分：
+       - parse_user_input()
+       - process_single_batch()
+       - main()
+       - 结构更清晰
+
+    4. 配置区重组：
+       - 顶部新增「使用者配置区」
+       - 所有可修改配置集中
+       - 附中文注释
+
+  ■ Bug 修复：
+    - process_excel 中 wb_data 未定义 bug
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-04-28 』第二十天 - Step4 全部改用 COM，解决 I 列超范围问题
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 问题分析：
+    - 代码生成的汇总表 I 列超出理论范围 ±0.21
+    - 手工操作正常
+    - I = (D-E)*1000，E = F数值 = RANDBETWEEN(-21,12)/100000 + D
+    - 理论范围：-0.21 到 +0.12
+
+  ■ 根本原因：
+    - openpyxl 的赋值操作不会触发 Excel 重新计算 F 列
+    - 手工操作复制 E→D 会触发 F 重新计算 RANDBETWEEN
+    - openpyxl 写入的是 F 列的旧缓存值
+
+  ■ 解决方案：
+    - Step4 全部改用 COM 完成（模拟手工操作）
+    - 封面修改和日期列处理一次完成
+    - D=E 操作在 COM 里执行，触发 F 列重新计算
+    - 读取 F 最新值写入 E
+
+  ■ 代码修改：
+    1. process_excel() 重写：不再用 openpyxl，全部 COM
+    2. 新增 days 参数：更新第3列公式 =D1+days
+    3. 封面修改改用 COM（否则被 COM 保存覆盖）
+
+  版本：v3.8
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-04-29 』第二十一天 - 打包 exe + PyQt5 图形界面
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 目标：
+    - 双击 exe 弹出图形界面
+    - 无需命令行
+    - 点按钮操作
+
+  ■ 核心问题：PyQt5 与 win32com 的 COM 冲突
+    - PyQt5 需要 STA 模式
+    - win32com 也需要 STA 模式
+    - 同一进程里争抢 COM 线程模式
+    - 直接导入会导致 COM 初始化失败
+
+  ■ 解决方案：延迟导入机制
+    - gui_app.py 删掉顶层 from report_maker import
+    - _load_default_path() 函数内导入
+    - start_process() 函数内导入
+    - ProcessThread.run() 函数内导入
+
+  ■ 代码修改：
+    1. gui_app.py（7处）：
+       - 删顶层导入
+       - 延迟导入 report_maker
+       - 恢复 QFileDialog / QMessageBox
+
+    2. report_maker.py（5处）：
+       - 新增 find_latest_folder()（GUI 自动检测最新一期）
+       - 新增 run_pipeline()（GUI 专用入口）
+       - find_all_excel_files() 过滤 ~$ 临时文件
+       - pywinauto.Desktop 加 try/except 保护
+
+    3. utils.py（1处）：
+       - sys.stdout.isatty() 改为 sys.stdout is not None and sys.stdout.isatty()
+
+  ■ 打包命令：
+    ```bash
+    pyinstaller --onefile --collect-all pywinauto \
+      --hidden-import win32timezone --hidden-import win32crypt \
+      --name "Excel报表工具_GUI版_v3.8" gui_app.py
+    ```
+
+  ■ 成果：
+    - Excel报表工具_GUI版_v3.8.exe（64.4 MB）
+    - 双击运行，图形界面
+    - 选文件夹、填参数、点按钮
+    - 稳定跑通
+
+  ■ 已知限制：
+    - 当前 exe 为 Office 版本
+    - WPS 版需要改 EXCEL_TYPE = "wps" 重新打包
+
+  版本：v3.9
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-04-30 』第二十二天 - 尝试无后台启动 + Office/WPS 下拉框（部分回退）
+══════════════════════════════════════════════════════════════════════════════
+
+【目标功能】
+
+  1. exe 无后台启动（不弹黑窗口）
+  2. Office/WPS 下拉框动态切换
+  3. 日志输出重定向到文本框
+
+【尝试过程】
+
+  ■ 1. 无后台启动：
+     - 尝试：打包命令加 --noconsole 或 --windowed
+     - 问题：日志输出完全丢失，界面无响应
+     - 原因：ProcessThread 的 stdout 管道失效
+     - 尝试方案：
+       a. 重定向 sys.stdout 到 QTextEdit → 无效，子进程输出不走 sys.stdout
+       b. 创建命名管道 → 复杂度高，不稳定
+       c. 写临时文件，定时读取 → 延迟大
+     - **结果：未能实现**，放弃此功能
+
+  ■ 2. Office/WPS 下拉框：
+     - 成功实现：gui_app.py 新增 QComboBox
+     - 用户选择后设置 os.environ["RPT_EXCEL_TYPE"]
+     - report_maker.py 的 run_pipeline() 读取环境变量
+     - 实现动态切换
+
+  ■ 3. 日志重定向：
+     - 目标：日志输出到界面文本框而不是弹黑窗口
+     - 问题：无后台启动后管道失效，日志无处输出
+     - **结果：因无后台启动失败，日志重定向也未实现**
+
+【最终决定】
+
+  - **回退无后台启动功能**：保留黑窗口（控制台），确保日志可见
+  - **保留 Office/WPS 下拉框**：这个功能成功实现且稳定
+  - **放弃日志重定向**：控制台足够用
+
+【代码变更】
+
+  gui_app.py：
+  - 新增 QComboBox（Office/WPS 下拉框）
+  - 删掉顶层 from report_maker import（延迟导入，避免 COM 冲突）
+  - start_process() 读取下拉框值传给 ProcessThread
+  - ProcessThread 启动时设 os.environ["RPT_EXCEL_TYPE"]
+
+  report_maker.py：
+  - run_pipeline() 增加 excel_type 参数
+  - excel_type=None 时从环境变量读取
+  - 两处 EXCEL_VISIBLE 设置点加 DEBUG 打印
+
+  打包命令（最终版本）：
+  ```bash
+  pyinstaller --onefile --collect-all pywinauto \
+    --hidden-import win32timezone --hidden-import win32crypt \
+    --name "Excel报表工具_GUI版_v3.10" gui_app.py
+  ```
+  （注意：去掉了 --console，因为默认就是控制台模式）
+
+【教训总结】
+
+  1. **有后台不是坏事**：
+     - 黑窗口能实时看到日志
+     - 出问题能看到具体报错
+     - 调试方便
+
+  2. **不要强求"完美"**：
+     - 无后台启动确实美观
+     - 但日志输出和调试信息更重要
+     - 用户接受有黑窗口的版本
+
+  3. **技术复杂度 vs 实用性**：
+     - 命名管道、文件轮询等方案太复杂
+     - 性价比低
+     - 控制台输出是最简单可靠的方案
+
+  当前状态：
+  - **版本**：v3.10
+  - **exe**：Excel报表工具_GUI版_v3.10.exe（64.4 MB）
+  - **功能**：有黑窗口（控制台） + Office/WPS 下拉框
+  - **稳定性**：测试通过
+
+  文档已更新：
+  - CHANGELOG.md：记录 v3.10 变更和未实现的功能
+  - README.md：删除无后台启动描述，保留实际功能
+  - PROJECT_LOG.txt：完整记录尝试过程和教训
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 项目总结 』（更新 2026-05-06）
+══════════════════════════════════════════════════════════════════════════════
+
+  项目历时：2026-04-08 至 2026-04-30（23天）
+  核心成果：Excel汇总表自动处理工具 + 图形界面 + exe 打包
+  
+  技术突破：
+  - pywinauto + COM 混合方案解决 Step5 自动化
+  - PyQt5 延迟导入解决 COM 冲突
+  - COM 实时计算解决 RANDBETWEEN 缓存问题
+
+  当前状态：v3.10 稳定版
+  - 图形界面（PyQt5）
+  - Office/WPS 动态切换
+  - exe 打包（64.4 MB）
+  - 多工程批量处理
+
+  文件结构：
+  F:\myproject\rpt-maker\
+  ├── report_maker.py          # 主程序 v3.10
+  ├── run_queue.py             # CLI 批量调度器
+  ├── gui_app.py               # GUI 打包入口（PyQt5）
+  ├── utils.py                 # 共享工具模块
+  ├── dist\                    # exe 输出目录
+  │   └── Excel报表工具_GUI版_v3.10.exe
+  ├── queue\                   # 待处理工程队列
+  │   └── done\               # 已完成工程
+  ├── .archive\                # 历史版本存档
+  ├── .logs\                   # 运行日志目录
+  ├── CHANGELOG.md             # 变更日志
+  ├── README.md                # 使用说明
+  └── PROJECT_LOG.txt          # 详细开发记录（本文件）
+
+  执行方式：
+  1. 双击 exe：图形界面，选文件夹填参数
+  2. CLI 单工程：`echo 5,1,2,3,1,4 | python report_maker.py`
+  3. CLI 多工程：`python run_queue.py -y -n -c`
+
+  依赖库：
+  - openpyxl, pywin32, pywinauto, requests, PyQt5, pytz
+
+  操作系统：Windows 10/11
+  Python版本：3.8+
+
+*文档最后更新：2026-05-06*

@@ -1,0 +1,44 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+
+# PyInstaller 输出
+dist/
+build/
+*.spec
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志文件
+.logs/
+*.log
+
+# 队列文件夹（包含用户数据）
+queue/
+
+# 临时文件
+*.tmp
+~$*.xlsx
+~$*.docx
+
+# 备份文件
+*.backup
+*.bak
+*_backup.py
+
+# Windows
+Thumbs.db
+Desktop.ini
