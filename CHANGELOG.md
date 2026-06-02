@@ -4,6 +4,21 @@
 
 ---
 
+## v3.10 Hotfix (2026-06-02) - 过滤 WPS/Excel 临时锁文件
+
+### 问题修复
+- **WPS提示无法打开 `~$汇总表.xlsx`**
+  - 原因：`find_excel_files()` 只按扩展名和“汇总”关键字筛选，未排除 WPS/Excel 生成的 `~$` 临时锁文件
+  - 现象：目录里残留 `~$汇总表.xlsx` 时，程序会误把它当作正式汇总表打开，WPS 弹出“无法打开文件”
+  - 解决：`find_excel_files()` 增加 `f.startswith('~$')` 过滤，自动跳过临时锁文件
+
+### 文档更新
+- README.md 增加 Q6 常见问题说明
+- PROJECT_LOG.txt 补充 2026-04-08 至 2026-04-21 前期开发记录
+- PROJECT_LOG.txt 追加 2026-06-02 Hotfix 记录
+
+---
+
 ## v3.10 (2026-04-30) - Office/WPS下拉框 
 
 ### 新增功能
@@ -12,6 +27,11 @@
   - WPS → `EXCEL_VISIBLE=True`（窗口闪现一下）
 
 ### 问题修复
+
+**问题2：WPS提示无法打开 `~$汇总表.xlsx`**
+- 原因：`find_excel_files()`只按扩展名和“汇总”关键字筛选，未排除 WPS/Excel 生成的 `~$` 临时锁文件
+- 现象：目录里残留 `~$汇总表.xlsx` 时，程序会误把它当作正式汇总表打开，WPS 弹出“无法打开文件”
+- 解决：`find_excel_files()`增加 `f.startswith('~$')` 过滤，跳过临时文件
 
 **问题1：选WPS后窗口仍隐藏**
 - 原因：`run_pipeline()`的`excel_type=None`时没有兜底读取环境变量
@@ -32,13 +52,12 @@
 1. `run_pipeline()`增加`excel_type`参数
 2. `excel_type=None`时从环境变量兜底读取
 3. 两处`EXCEL_VISIBLE`设置点加DEBUG打印（Step5第233行、Step6第747行）
+4. `find_excel_files()`过滤 `~$` 开头的 WPS/Excel 临时锁文件，避免误打开 `~$汇总表.xlsx`
 
 ### 打包命令
 ```bash
 # 命令行方式
-pyinstaller --onefile --collect-all pywinauto \
-  --hidden-import win32timezone --hidden-import win32crypt \
-  --name "Excel报表工具_GUI版_v3.10" gui_app.py
+pyinstaller --onefile --collect-all pywinauto --hidden-import win32timezone --hidden-import win32crypt  --name "Excel报表工具_GUI版_v3.10" gui_app.py
 ```
 
 ### exe相关文件

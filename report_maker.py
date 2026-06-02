@@ -103,7 +103,7 @@ JINAN_LAT       = 36.6512                               # 济南坐标（纬度�
 JINAN_LON       = 117.1205                              # 济南坐标（经度）
 
 # ── 处理范围 ──
-TARGET_SHEETS = {"垂直位移", "坑外水位", "测斜", "水平位移", "竖向位移", "轴力"}  # 要处理的 sheet 名称
+TARGET_SHEETS = {"垂直位移", "坑外水位", "水位", "测斜", "水平位移", "水平","竖向位移", "竖向","轴力"}  # 要处理的 sheet 名称
 
 # ═══════════════════════════════════════════════════════════════════════════════════
 # 内部配置（一般不需修改）
@@ -481,11 +481,13 @@ def make_simulated_weather(target_date):
     return "多云 15~25°C"
 
 def find_excel_files(directory, patterns=None):
-    """查找Excel文件"""
+    """查找Excel文件，排除WPS/Excel生成的临时锁文件"""
     patterns = patterns or ('汇总', 'summary')
     files = []
     for root, _, files_list in os.walk(directory):
         for f in files_list:
+            if f.startswith('~$'):
+                continue
             if f.lower().endswith(('.xls', '.xlsx', '.xlsm')):
                 if any(p.lower() in f.lower() for p in patterns):
                     files.append(os.path.join(root, f))

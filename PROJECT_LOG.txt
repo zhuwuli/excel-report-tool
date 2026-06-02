@@ -38,7 +38,145 @@
 『 2026-04-08 至 2026-04-21 』项目前期开发
 ══════════════════════════════════════════════════════════════════════════════
 
-  （内容参考原记录，此处略）
+  注：本段根据 README.md 与 CHANGELOG.md 中保留的版本历史补充整理。
+
+【2026-04-08】v1.0 - 初始版本
+
+  ■ 基础功能：
+    - 建立单期处理框架
+    - 实现基础日期处理逻辑
+    - 实现 Excel 转 PDF 功能
+    - 实现期数和日期递增逻辑
+
+  ■ 技术栈：
+    - openpyxl 读写 Excel
+    - win32com 操作 Excel COM
+    - 心知天气 API 初步集成
+
+
+【2026-04-10 至 2026-04-13】v2.0 - 单期版完善 + 天气 API 集成
+
+  ■ 主要改进：
+    - 集成心知天气 API，按济南天气更新封面
+    - 天气关键词从精确匹配改为关键词列表遍历
+    - 温度处理使用正则匹配温度单元格
+    - 日期格兼容 datetime 对象和字符串格式
+
+  ■ 问题发现：
+    - openpyxl 写公式不写值，只能写公式本身，无法得到 Excel 计算后的缓存值
+    - xlwings 和 openpyxl 混用容易导致 COM 冲突
+    - 天气和温度可能位于不同单元格，需要分别定位
+    - 日期格存在两种表示方式，需要统一判断
+    - 开始研究 Step5 外部链接更新自动化方案
+
+
+【2026-04-14】v3.0 - 批量处理框架完成
+
+  ■ 六步主流程完成：
+    1. 复制目录（期数 +1，日期 + 自定义天数）
+    2. 删除目录下所有 PDF 文件
+    3. 修改 Excel 封面（期数、天气、温度）
+    4. 处理 Excel 日期列（第2列 -> 第1列，第3列 -> 第2列，只写数值）
+    5. 自动处理外部引用（注册表 + 自动点击更新）
+    6. Excel 转 PDF（COM 接口）
+
+  ■ Step5 自动化探索：
+    - 7 个纯 COM 方案全部失败
+    - 失败现象包括 crash、变量未更新、COM 单例导致第二批 Open 方法无效
+    - 初步定位根因：Windows COM 单例机制，Dispatch() 容易返回已损坏的残存实例
+    - 开始转向 pywinauto + COM 混合方案
+
+
+【2026-04-15】v3.1 - Step5 全自动化 + 代码优化
+
+  ■ 核心突破：
+    - pywinauto + COM 混合方案成功
+    - COM 负责打开、保存 Excel
+    - pywinauto 负责点击“更新(&U)”按钮
+    - 使用 UpdateLinks=2 强制弹出外部链接更新对话框
+    - 认识到 DisplayAlerts=False 对该对话框无效
+
+  ■ 代码优化：
+    - 删除无效的激活向导关闭逻辑
+    - 简化 open_and_update_links 的异常处理
+    - 清理冗余变量
+    - 简化 main 循环中间变量
+    - 改进日志输出和处理流程
+
+
+【2026-04-16】v3.2 - 多工程调度器 + 三重天气系统
+
+  ■ 多工程调度：
+    - 新增多工程调度器 run_all_projects.py（后续改名为 run_queue.py）
+    - 支持队列目录：F:\myproject\rpt-maker\queue\
+    - 每个工程目录使用 config.txt 配置处理期数和间隔
+    - 处理完成后自动移动到 done 子目录
+    - 每个工程输出独立日志文件
+    - 支持 REPORT_MAKER_PARENT 环境变量指定工程根目录
+
+  ■ 三重天气系统：
+    - 主用：心知天气 API
+    - 备用：Open-Meteo Forecast API
+    - 历史：Open-Meteo Historical API
+    - 根据目标日期是过去、近期未来还是远期未来选择不同策略
+
+
+【2026-04-16】v3.3 - 封面修改逻辑重构
+
+  ■ 封面处理优化：
+    - 封面搜索范围优化为 min_col=5, max_col=40，更精准定位封面区域
+    - 统一用 str(cell.value) 处理期数，兼容数值类型期数单元格
+    - 天气前缀智能处理：
+      - 有“天气：”前缀时只替换前缀后的天气
+      - 无前缀时直接替换天气关键词
+    - 去掉温度相关所有代码，封面只改期数和天气
+    - 增加调试打印，方便定位封面修改问题
+
+  ■ 代码整理：
+    - WMO_CODE_MAP、JINAN_LAT、JINAN_LON 提升为模块常量
+    - 减少重复配置和散落常量
+
+
+【2026-04-17】v3.4 - 自动化断点 + 健壮性增强 + 用户体验优化
+
+  ■ run_queue.py 新增功能：
+    - --notify / -n：处理完成后发送 Windows Toast 通知
+    - --retry-failed：读取 .logs/failed_projects.txt，只重试历史失败工程
+    - --dry-run：只显示将要执行的操作，不实际处理
+    - 失败记录持久化：失败加入 failed_projects.txt，成功后自动移除
+
+  ■ report_maker.py 健壮性增强：
+    - Step5 文件级重试：每个 Excel 文件最多重试 3 次
+    - PDF 转换重试：失败后自动重试
+    - 指数退避：1s / 2s / 4s
+    - 子进程环境变量增加 PYTHONIOENCODING=utf-8 / PYTHONUTF8=1，缓解乱码问题
+
+  ■ 问题修复：
+    - PyCharm / VSCode 等 IDE 环境自动禁用 ANSI 颜色，避免显示 [0m 等转义序列
+    - 天气 API 逻辑优化：超过心知天气范围时改走 Open-Meteo
+    - 移除冗余 import
+    - TARGET_SHEETS 从 list 改为 set，提升查找效率
+
+
+【2026-04-20】v3.5 - Excel 静默运行 + 项目整理
+
+  ■ Excel 无窗口运行：
+    - excel.Visible = False：隐藏 Excel 窗口
+    - excel.ScreenUpdating = False：关闭屏幕更新，提升性能
+    - excel.DisplayAlerts = False：禁止普通弹窗警告
+    - pywinauto 仍可自动点击隐藏窗口中的外部链接更新按钮
+
+  ■ 项目结构整理：
+    - 根目录重命名：project -> rpt-maker
+    - dispatcher.py -> run_queue.py
+    - archive/ -> .archive/
+    - logs/ -> .logs/
+    - 明确 queue/ 和 queue/done/ 的日常使用方式
+
+  ■ 阶段状态：
+    - 命令行批量处理基本稳定
+    - 自动处理外部链接已可无人值守运行
+    - 项目逐步从脚本演进为可交付工具
 
 
 ══════════════════════════════════════════════════════════════════════════════
@@ -304,3 +442,199 @@
   Python版本：3.8+
 
 *文档最后更新：2026-05-06*
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-05-06 』第二十三天 - 项目发布到 GitHub（根据备份整理）
+══════════════════════════════════════════════════════════════════════════════
+
+【上午】文档完善与补充
+
+  ■ 问题发现：
+    - README.md 版本历史缺少 v3.8、v3.9、v3.10 的记录
+    - PROJECT_LOG.txt 只记录到 2026-04-29
+
+  ■ 文档更新：
+    1. 用户手动修改 README.md 和 CHANGELOG.md：
+       - 删除未实现的功能描述（exe 无后台启动）
+       - 保留实际完成的功能
+
+    2. PROJECT_LOG.txt 补充完整：
+       - 补充 4月22日 到 4月30日 的完整记录
+       - 重点记录“尝试过但未实现”的功能：
+         a. 无后台启动：尝试了 3 种方案均失败
+            - stdout 重定向到 QTextEdit（无效）
+            - 命名管道（复杂度高）
+            - 临时文件轮询（延迟大）
+         b. 日志重定向：因无后台启动失败而未实现
+       - 教训总结：控制台不是坏事，技术复杂度要服务于实用性
+       - 更新项目总结：23 天开发历程
+
+【中午】Git 和 GitHub 学习
+
+  ■ Git 初始化：
+    1. 创建 .gitignore 文件：
+       - 排除 Python 缓存（__pycache__、*.pyc）
+       - 排除打包输出（dist/、build/）
+       - 排除日志文件（.logs/）
+       - 排除用户数据（queue/）
+       - 排除临时文件（~$*.xlsx）
+
+    2. 初始化 Git 仓库：
+       - git init
+       - git config user.name / user.email
+       - git add .
+       - git commit -m "Initial commit: Excel汇总表自动处理工具 v3.10"
+       - 首次提交包含 14 个文件，约 8060 行代码
+
+  ■ GitHub 基础知识：
+    - .gitignore：告诉 Git 哪些文件不上传
+    - License：说明别人能不能使用代码
+    - MIT License：较宽松，适合开源
+    - 不加 License：默认保留全部版权
+    - 推荐配置：如果想开源，可添加 MIT License
+
+  ■ 推送遇到的问题：
+    1. 第一次推送失败：
+       - 错误：fatal: could not read Username for 'https://github.com'
+       - 原因：没有认证凭据
+
+    2. 解释了三个概念：
+       - Personal Access Token：GitHub 密码 2.0
+       - SSL/TLS 证书：保证连接安全
+       - Git 凭据（wincred）：Windows 凭据管理器保存 Token
+
+    3. 最终成功：
+       - git config --global credential.helper wincred
+       - git push -u origin main
+       - 浏览器弹窗认证
+       - 代码成功上传到 GitHub
+
+【下午】GitHub 进阶知识
+
+  ■ 发布后可以做的事：
+    1. 立即可做：
+       - 完善 README：添加徽章、截图
+       - 添加 License：MIT License
+       - 添加 Topics：excel、automation、python、pyqt5
+
+    2. 推广项目：
+       - 分享到社交平台
+       - 写技术博客记录开发过程
+
+    3. 项目管理：
+       - 创建 Releases（上传 exe）
+       - 创建 Issues（待办事项）
+
+    4. 职业发展：
+       - 简历里加入项目
+       - 准备面试问题
+
+  ■ 代码更新流程：
+    1. 小修改（修 bug、改文档）：
+       - git add .
+       - git commit -m "fix: 修复XXX问题"
+       - git push
+
+    2. 大版本更新（新功能）：
+       - 更新版本号（README、CHANGELOG、gui_app.py）
+       - 提交代码
+       - GitHub 创建 Release
+       - 上传新 exe
+
+    3. Commit 信息规范：
+       - feat: 新功能
+       - fix: Bug 修复
+       - docs: 文档
+       - refactor: 重构
+       - perf: 性能优化
+       - test: 测试
+       - build: 构建/依赖
+
+【成果总结】
+
+  ■ 项目成功发布到 GitHub：
+    - 仓库地址：https://github.com/zhuwuli/excel-report-tool
+    - 完整文档：README、CHANGELOG、PROJECT_LOG
+
+  ■ 学会了 Git 基础操作：
+    - 初始化仓库
+    - 提交代码
+    - 推送到 GitHub
+    - 版本管理流程
+
+  ■ 理解了 GitHub 生态：
+    - .gitignore、License 的作用
+    - Personal Access Token 认证
+    - Releases、Issues 功能
+    - Commit 信息规范
+
+【教训与收获】
+
+  1. 文档的重要性：
+     - 完整的开发记录是宝贵资产
+     - “尝试过但未实现”的经验同样值得记录
+     - 面试时可以讲解决方案和思考过程
+
+  2. Git 规范：
+     - .gitignore 要在第一次提交前创建
+     - Commit 信息要写清楚，方便回溯
+     - 大文件（exe）不建议提交到代码仓库
+
+  3. 开源的价值：
+     - 代码公开可以作为作品集
+     - GitHub 是程序员简历的一部分
+     - 好的文档和代码同样重要
+
+══════════════════════════════════════════════════════════════════════════════
+『 项目总结 』（最终更新 2026-05-06，根据备份整理）
+══════════════════════════════════════════════════════════════════════════════
+
+  项目历时：2026-04-08 至 2026-04-30（23 天开发）
+            2026-05-06（发布到 GitHub）
+
+  核心成果：
+  - Excel 汇总表自动处理工具（完整功能）
+  - PyQt5 图形界面
+  - exe 打包
+  - 完整文档（README、CHANGELOG、PROJECT_LOG）
+  - 开源发布（GitHub）
+
+  技术突破：
+  - pywinauto + COM 混合方案解决 Step5 自动化
+  - PyQt5 延迟导入解决 COM 冲突
+  - COM 实时计算解决 RANDBETWEEN 缓存问题
+  - 三重天气 API 策略
+
+  当前状态：v3.10 稳定版
+  - 代码：8000+ 行
+  - 文档：README、CHANGELOG、PROJECT_LOG
+  - 仓库：https://github.com/zhuwuli/excel-report-tool
+  - 开源协议：待添加（建议 MIT License）
+
+  后续计划：
+  - 添加 MIT License
+  - 添加 Topics 标签
+  - 创建 Release v3.10（上传 exe）
+  - 截图软件界面
+  - 写文章分享
+  - 简历里加入项目
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-02 』v3.10 Hotfix - 过滤 WPS/Excel 临时锁文件
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 问题发现：
+    - WPS 弹窗提示“无法打开文件”
+    - 弹窗中的文件名为 ~$汇总表.xlsx，大小显示异常
+    - 该文件是 WPS/Excel 打开正式文件时生成的临时锁文件，不是真正的工作簿
+
+  ■ 根本原因：
+    - find_excel_files() 只判断扩展名和“汇总/summary”关键字
+    - 临时文件 ~$汇总表.xlsx 同样满足 .xlsx + 汇总 规则
+    - 程序误把临时锁文件当作正式汇总表交给 WPS 打开
+
+  ■ 修复内容：
+    - report_maker.py 中 find_excel_files() 增加 f.startswith('~$') 判断
+    - 自动跳过所有 ~$ 开头的 WPS/Excel 临时锁文件
+    - README.md 增加 Q6 故障说明
+    - CHANGELOG.md 记录本次问题修复
