@@ -27,16 +27,17 @@ from datetime import datetime
 from utils import green, red, yellow, cyan, bold
 
 # ═══════════════════════════════════════════════════════════════════════════════════
-# 使用者配置区（按需修改这里）
+# 路径配置（自动根据当前脚本位置推导，无需手动修改）
 # ═══════════════════════════════════════════════════════════════════════════════════
-QUEUE_DIR    = Path(r"F:\myproject\rpt-maker\queue")   # 待处理队列目录
-DONE_DIR     = QUEUE_DIR / "done"                     # 已完成目录
-REPORT_MAKER = Path(r"F:\myproject\rpt-maker\report_maker.py")
-PYTHON       = r"F:\anaconda\python.exe"               # 改成你的 Python 路径
+PROJECT_DIR  = Path(__file__).resolve().parent         # 项目根目录
+QUEUE_DIR    = PROJECT_DIR / "queue"                   # 待处理队列目录
+DONE_DIR     = QUEUE_DIR / "done"                      # 已完成目录
+REPORT_MAKER = PROJECT_DIR / "report_maker.py"         # 主程序路径
+PYTHON       = sys.executable                          # 使用当前运行run_queue.py的Python
 # ═══════════════════════════════════════════════════════════════════════════════════
 # 内部配置
 # ═══════════════════════════════════════════════════════════════════════════════════
-LOG_DIR    = Path(r"F:\myproject\rpt-maker\.logs")
+LOG_DIR    = PROJECT_DIR / ".logs"
 FAILED_LOG = LOG_DIR / "failed_projects.txt"
 
 

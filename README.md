@@ -482,15 +482,37 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
-### v3.10 Hotfix (2026-06-02) - 过滤 WPS/Excel 临时锁文件
+### v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 **问题修复**：
 - 修复 WPS 提示无法打开 `~$汇总表.xlsx` 的问题
 - `find_excel_files()` 过滤 `~$` 开头的 WPS/Excel 临时锁文件
+- 修复 GUI 中途点击“停止”容易残留 Excel 进程的问题
+
+**安全停止优化**：
+- 停止按钮不再硬终止后台线程
+- 改为请求安全停止，当前步骤收尾后再退出
+- Excel COM 操作取消时会尽量关闭工作簿、退出 Excel 并清理进程
+
+**路径自动化**：
+- `run_queue.py` 自动根据当前脚本所在目录推导 `queue`、`.logs`、`report_maker.py`
+- `PYTHON` 改为使用当前运行 `run_queue.py` 的 Python 环境
+- 项目移动到其他目录后，不需要再手动修改 `run_queue.py` 顶部路径
+
+**使用方式**：
+- 用法不变，进入项目目录运行 `python run_queue.py ...`
+- 预览：`python run_queue.py --dry-run --yes`
+- 正式处理：`python run_queue.py -y -n -c`
+
+**验证**：
+- 语法检查通过
+- 模拟立即停止返回 `cancelled`
+- 模拟 Excel 已打开后停止，确认执行 `Close` / `Quit` / 清理进程
+- `python run_queue.py --dry-run --yes` 通过
 
 **文档更新**：
 - 常见问题新增 Q6
-- PROJECT_LOG.txt 补充前期开发记录和本次 Hotfix 记录
+- PROJECT_LOG.txt 补充前期开发记录和本次 Hotfix / 安全停止 / 路径自动化记录
 
 ---
 

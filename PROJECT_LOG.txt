@@ -638,3 +638,80 @@
     - 自动跳过所有 ~$ 开头的 WPS/Excel 临时锁文件
     - README.md 增加 Q6 故障说明
     - CHANGELOG.md 记录本次问题修复
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-02 』v3.10 Hotfix - GUI 安全停止优化
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 问题发现：
+    - GUI 中途点击“停止”后，可能残留 Excel/WPS 进程
+    - 可能留下临时锁文件、半完成的 COM 状态或未关闭的工作簿
+
+  ■ 根本原因：
+    - 原停止逻辑使用 QThread.terminate() 硬终止后台线程
+    - 线程可能正执行 report_maker.py 中的 Excel COM 操作
+    - 硬终止时，wb.Close()、excel.Quit()、_kill_excel_process() 可能执行不到
+
+  ■ 修复方案：
+    - GUI 停止按钮改为协作式停止：
+      1. stop_process() 调用 request_stop()
+      2. 后台线程只设置取消标志，不再 terminate()
+      3. run_pipeline() / process_single_batch() 在步骤边界检查 cancel_check()
+      4. 用户请求停止时抛出 PipelineCancelled 并返回 status=cancelled
+
+    - Excel COM 清理增强：
+      1. process_excel() 增加 finally
+      2. 取消或异常时尝试 Workbook.Close(SaveChanges=False)
+      3. 尝试 Excel.Quit()
+      4. 最后调用 _kill_excel_process() 清理残留 Excel 进程
+
+  ■ 修改文件：
+    - gui_app.py：停止按钮与关闭窗口逻辑改为 request_stop()
+    - report_maker.py：新增 PipelineCancelled、check_cancelled()、cancel_check 参数传递
+    - report_maker.py：process_excel() 增加 finally 清理逻辑
+
+  ■ 验证结果：
+    - python -m py_compile report_maker.py gui_app.py run_queue.py utils.py 通过
+    - 模拟立即停止：run_pipeline() 返回 cancelled
+    - 模拟 Excel 已打开后停止：确认调用 Close(SaveChanges=False)、Quit、_kill_excel_process()
+
+  ■ 注意：
+    - 新停止逻辑不是“立刻拔电源”，而是在下一个安全检查点停止
+    - 如果正卡在 Excel COM 系统调用中，需要等待该调用返回后再收尾
+
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-02 』v3.10 Hotfix - run_queue.py 路径自动化
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 问题发现：
+    - run_queue.py 顶部写死了项目绝对路径
+    - QUEUE_DIR、REPORT_MAKER、LOG_DIR 固定指向 F:\myproject\rpt-maker
+    - PYTHON 固定指向 F:\anaconda\python.exe
+    - 项目移动目录或换电脑后，需要手动修改源码才能运行
+
+  ■ 修复方案：
+    - 新增 PROJECT_DIR = Path(__file__).resolve().parent
+    - QUEUE_DIR = PROJECT_DIR / "queue"
+    - DONE_DIR = QUEUE_DIR / "done"
+    - REPORT_MAKER = PROJECT_DIR / "report_maker.py"
+    - LOG_DIR = PROJECT_DIR / ".logs"
+    - PYTHON = sys.executable，使用当前运行 run_queue.py 的 Python 环境
+
+  ■ 使用方式：
+    - 用法不变，先进入项目目录：
+      cd F:\myproject\rpt-maker
+    - 预览：
+      python run_queue.py --dry-run --yes
+    - 正式处理：
+      python run_queue.py -y -n -c
+
+  ■ 验证结果：
+    - python -m py_compile run_queue.py 通过
+    - python run_queue.py --dry-run --yes 通过
+    - dry-run 成功识别当前项目目录下的 queue\稼轩2 工程
+
+  ■ 注意：
+    - PYTHON = sys.executable 意味着调度器会使用当前 Python 环境
+    - 运行前仍需确保当前 Python 已安装 openpyxl、pywin32、pywinauto、requests、PyQt5 等依赖

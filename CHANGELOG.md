@@ -4,18 +4,41 @@
 
 ---
 
-## v3.10 Hotfix (2026-06-02) - 过滤 WPS/Excel 临时锁文件
+## v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 ### 问题修复
 - **WPS提示无法打开 `~$汇总表.xlsx`**
   - 原因：`find_excel_files()` 只按扩展名和“汇总”关键字筛选，未排除 WPS/Excel 生成的 `~$` 临时锁文件
   - 现象：目录里残留 `~$汇总表.xlsx` 时，程序会误把它当作正式汇总表打开，WPS 弹出“无法打开文件”
   - 解决：`find_excel_files()` 增加 `f.startswith('~$')` 过滤，自动跳过临时锁文件
+- **GUI停止按钮容易残留Excel进程**
+  - 原因：原逻辑使用 `QThread.terminate()` 硬终止后台线程，Excel COM 清理代码可能来不及执行
+  - 解决：改为协作式安全停止，GUI 设置取消标志，`report_maker.py` 在步骤边界检查并安全退出
+  - 清理：`process_excel()` 增加 `finally`，取消或异常时尽量执行 `Workbook.Close(SaveChanges=False)`、`Excel.Quit()` 和 `_kill_excel_process()`
+
+### 代码修改
+- `gui_app.py`：停止按钮不再调用 `thread.terminate()`，改为 `request_stop()`
+- `report_maker.py`：新增 `PipelineCancelled`、`check_cancelled()` 和 `cancel_check` 传递
+- `report_maker.py`：`run_pipeline()`、`process_single_batch()`、`process_excel()`、`excel_to_pdf()`、外部链接处理支持取消检查
+- `run_queue.py`：路径配置改为自动根据 `Path(__file__).resolve().parent` 推导
+- `run_queue.py`：`QUEUE_DIR`、`DONE_DIR`、`REPORT_MAKER`、`LOG_DIR` 不再写死项目绝对路径
+- `run_queue.py`：`PYTHON` 改为 `sys.executable`，使用当前运行 `run_queue.py` 的 Python 环境
+
+### 使用方式
+- 用法不变：进入项目目录后运行 `python run_queue.py ...`
+- 项目目录移动后无需手动修改 `run_queue.py` 路径配置
+
+### 验证
+- `python -m py_compile report_maker.py gui_app.py run_queue.py utils.py` 通过
+- 模拟立即停止：`run_pipeline()` 返回 `status=cancelled`
+- 模拟 Excel 已打开后停止：确认调用 `Workbook.Close(SaveChanges=False)`、`Excel.Quit()`、`_kill_excel_process()`
+- `python run_queue.py --dry-run --yes` 通过，可自动识别当前项目目录下的 `queue`
 
 ### 文档更新
 - README.md 增加 Q6 常见问题说明
 - PROJECT_LOG.txt 补充 2026-04-08 至 2026-04-21 前期开发记录
-- PROJECT_LOG.txt 追加 2026-06-02 Hotfix 记录
+- PROJECT_LOG.txt 追加 2026-06-02 Hotfix 和安全停止优化记录
+- README.md / PROJECT_LOG.txt 记录 `run_queue.py` 路径自动化改动
 
 ---
 

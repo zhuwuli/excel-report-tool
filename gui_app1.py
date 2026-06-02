@@ -11,7 +11,7 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QProgressBar, QLineEdit,
-    QFileDialog, QMessageBox, QGroupBox, QFrame
+    QFileDialog, QMessageBox, QGroupBox, QFrame, QComboBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
@@ -146,13 +146,26 @@ class ProcessThread(QThread):
     progress = pyqtSignal(str, int, int)   # text, current, total
     finished = pyqtSignal(int, int, list)  # success, fail, results
 
-    def __init__(self, source_folder, n_batches, days_list):
+    def __init__(self, source_folder, n_batches, days_list, excel_type="office"):
         super().__init__()
         self.source_folder = source_folder
         self.n_batches = n_batches
         self.days_list = days_list
+        self.excel_type = excel_type
+        self._cancel_requested = False
+
+    def request_stop(self):
+        """请求后台流程在下一个安全点停止"""
+        self._cancel_requested = True
+
+    def is_cancel_requested(self):
+        return self._cancel_requested
 
     def run(self):
+        import warnings
+        warnings.filterwarnings("ignore")
+        os.environ["RPT_EXCEL_TYPE"] = self.excel_type
+
         def callback(text, current, total):
             self.progress.emit(text, current, total)
 
@@ -161,7 +174,8 @@ class ProcessThread(QThread):
             self.source_folder,
             self.n_batches,
             self.days_list,
-            progress_callback=callback
+            progress_callback=callback,
+            cancel_check=self.is_cancel_requested
         )
         self.finished.emit(success, fail, results)
 
@@ -261,6 +275,20 @@ class MainWindow(QMainWindow):
         hint = QLabel("💡 提示：间隔天数可输入多个，用逗号分隔，例如 1,2,3 表示第1期隔1天，第2期隔2天...")
         hint.setStyleSheet("color: #666666; font-size: 11px;")
         param_layout.addWidget(hint)
+
+        # Excel 类型选择
+        excel_row = QHBoxLayout()
+        excel_row.addWidget(QLabel("Excel 类型:"))
+        self.excel_type_combo = QComboBox()
+        self.excel_type_combo.addItems(["Microsoft Office", "WPS Office"])
+        self.excel_type_combo.setCurrentIndex(0)
+        self.excel_type_combo.setFixedWidth(160)
+        excel_note = QLabel("（Office 静默运行，WPS 窗口会闪一下）")
+        excel_note.setStyleSheet("color: #888888; font-size: 11px;")
+        excel_row.addWidget(self.excel_type_combo)
+        excel_row.addWidget(excel_note)
+        excel_row.addStretch()
+        param_layout.addLayout(excel_row)
 
         main_layout.addWidget(param_group)
 
@@ -373,11 +401,15 @@ class MainWindow(QMainWindow):
         self.select_btn.setEnabled(False)
         self.batch_input.setEnabled(False)
         self.days_input.setEnabled(False)
+        self.excel_type_combo.setEnabled(False)
 
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(n_batches)
 
-        self.thread = ProcessThread(folder, n_batches, days_list)
+        excel_type = "wps" if self.excel_type_combo.currentIndex() == 1 else "office"
+        self.log(f"📦 Excel 类型: {excel_type}")
+
+        self.thread = ProcessThread(folder, n_batches, days_list, excel_type=excel_type)
         self.thread.progress.connect(self.on_progress)
         self.thread.finished.connect(self.on_finished)
         self.thread.start()
@@ -394,8 +426,14 @@ class MainWindow(QMainWindow):
         self.select_btn.setEnabled(True)
         self.batch_input.setEnabled(True)
         self.days_input.setEnabled(True)
+        self.excel_type_combo.setEnabled(True)
 
-        if fail == 0:
+        cancelled = any(r.get("status") == "cancelled" for r in results)
+
+        if cancelled:
+            self.log("\n⚠️ 已安全停止，Excel资源已清理")
+            QMessageBox.information(self, "已停止", "处理已在安全点停止。")
+        elif fail == 0:
             self.log(f"\n🎉 全部完成！{success}期处理成功")
             QMessageBox.information(self, "完成", f"🎉 {success}期处理全部成功！")
         else:
@@ -409,21 +447,19 @@ class MainWindow(QMainWindow):
         self.thread = None
 
     def stop_process(self):
-        if self.thread:
-            self.thread.terminate()
-            self.thread.wait()
-            self.thread = None
-        self.log("\n⚠️ 已停止处理")
-        self.start_btn.setEnabled(True)
+        if self.thread and self.thread.isRunning():
+            self.thread.request_stop()
+            self.log("\n⚠️ 已请求停止，正在等待当前步骤安全收尾...")
+        else:
+            self.log("\n⚠️ 当前没有正在运行的任务")
         self.stop_btn.setEnabled(False)
-        self.select_btn.setEnabled(True)
-        self.batch_input.setEnabled(True)
-        self.days_input.setEnabled(True)
 
     def closeEvent(self, event):
         if self.thread and self.thread.isRunning():
-            self.thread.terminate()
-            self.thread.wait()
+            self.thread.request_stop()
+            self.log("\n⚠️ 正在处理任务，已请求安全停止；停止完成后再关闭窗口。")
+            event.ignore()
+            return
         event.accept()
 
 

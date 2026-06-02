@@ -103,7 +103,7 @@ JINAN_LAT       = 36.6512                               # 济南坐标（纬度�
 JINAN_LON       = 117.1205                              # 济南坐标（经度）
 
 # ── 处理范围 ──
-TARGET_SHEETS = {"垂直位移", "坑外水位", "水位", "测斜", "水平位移", "水平","竖向位移", "竖向","轴力"}  # 要处理的 sheet 名称
+TARGET_SHEETS = {"垂直位移", "坑外水位", "测斜", "水平位移", "竖向位移", "轴力"}  # 要处理的 sheet 名称
 
 # ═══════════════════════════════════════════════════════════════════════════════════
 # 内部配置（一般不需修改）
@@ -143,16 +143,6 @@ WMO_CODE_MAP = {                                        # Open-Meteo WMO 代码
 # 重试配置
 MAX_RETRIES    = 3       # 各操作最大重试次数
 RETRY_BACKOFF   = [1, 2, 4]   # 指数退避间隔（秒）
-
-
-class PipelineCancelled(Exception):
-    """用户请求安全停止流水线"""
-
-
-def check_cancelled(cancel_check=None):
-    """在步骤边界检查是否请求取消"""
-    if cancel_check and cancel_check():
-        raise PipelineCancelled("用户请求停止处理")
 
 # ============ 通用装饰器 ============
 def with_retry(func):
@@ -228,7 +218,7 @@ def _click_excel_update_button():
     except Exception:
         return False
 
-def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None):
+def open_and_update_links(excel_path, max_retries=MAX_RETRIES):
     """
     用COM打开Excel文件，自动处理'是否更新外部链接'对话框。
     流程：打开文件（UpdateLinks=2）→ 等对话框弹出 → pywinauto点'更新' → 保存关闭
@@ -237,13 +227,10 @@ def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None
     last_error = None
 
     for attempt in range(max_retries):
-        check_cancelled(cancel_check)
         def _do():
-            check_cancelled(cancel_check)
             _kill_excel_process()
             excel = win32com.client.Dispatch("Excel.Application")
             excel.Visible = EXCEL_VISIBLE
-            print(f"[DEBUG Step5] excel_type={EXCEL_TYPE}, EXCEL_VISIBLE={EXCEL_VISIBLE}, Visible set to {EXCEL_VISIBLE}")
             excel.DisplayAlerts = False
             time.sleep(2.0)
 
@@ -271,9 +258,6 @@ def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None
             result = _do()
             if result:
                 return True
-        except PipelineCancelled:
-            _kill_excel_process()
-            raise
         except Exception as e:
             last_error = e
             print(f"  [失败] 第 {attempt + 1} 次: {e}")
@@ -282,7 +266,7 @@ def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None
     print(f"  [最终] {os.path.basename(excel_path)} {max_retries}次重试均失败: {last_error}")
     return False
 
-def handle_external_links_auto(target_dir, cancel_check=None):
+def handle_external_links_auto(target_dir):
     """
     自动处理目录下的外部引用：
     1. 将目录加入Excel信任位置（避免黄色警告条）
@@ -306,14 +290,13 @@ def handle_external_links_auto(target_dir, cancel_check=None):
         progress = None
 
     for i, excel_path in enumerate(all_excels, 1):
-        check_cancelled(cancel_check)
         basename = os.path.basename(excel_path)
         if progress:
             progress.update(i, basename)
         else:
             print(f"  [处理] {basename}...", flush=True)
 
-        if open_and_update_links(excel_path, cancel_check=cancel_check):
+        if open_and_update_links(excel_path):
             success_count += 1
             print(f"  {green('[成功]')} {basename} 处理完成")
         else:
@@ -497,13 +480,11 @@ def make_simulated_weather(target_date):
     return "多云 15~25°C"
 
 def find_excel_files(directory, patterns=None):
-    """查找Excel文件，排除WPS/Excel生成的临时锁文件"""
+    """查找Excel文件"""
     patterns = patterns or ('汇总', 'summary')
     files = []
     for root, _, files_list in os.walk(directory):
         for f in files_list:
-            if f.startswith('~$'):
-                continue
             if f.lower().endswith(('.xls', '.xlsx', '.xlsm')):
                 if any(p.lower() in f.lower() for p in patterns):
                     files.append(os.path.join(root, f))
@@ -604,22 +585,18 @@ def modify_cover(wb, issue_num, weather, date):
         print(f"[失败] 修改封面失败: {e}")
         return False
 
-def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_check=None):
+def process_excel(filepath, target_date, issue_num, weather, days=1):
     """处理汇总表 - 全部用COM完成"""
     if not os.path.exists(filepath):
         print(f"[失败] 文件不存在: {filepath}")
         return False
 
-    excel_com = None
-    wb_com = None
     try:
-        check_cancelled(cancel_check)
         print(f"\n[文件] {os.path.basename(filepath)}")
         print(f"[日期] 目标日期: {target_date.strftime('%Y/%m/%d')}")
 
         _kill_excel_process()
         time.sleep(1.5)
-        check_cancelled(cancel_check)
         excel_com = win32com.client.Dispatch("Excel.Application")
         excel_com.Visible = False
         excel_com.DisplayAlerts = False
@@ -663,7 +640,6 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
         done = set()
 
         for sheet in TARGET_SHEETS:
-            check_cancelled(cancel_check)
             if sheet in done:
                 continue
             done.add(sheet)
@@ -708,13 +684,9 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
             # 数据迁移：第2列→第1列（触发重新计算）
             e_values = []
             for r in range(1, max_row + 1):
-                if r % 50 == 1:
-                    check_cancelled(cancel_check)
                 e_values.append(ws_com.Cells(r, c2).Value)
 
             for r in range(1, max_row + 1):
-                if r % 50 == 1:
-                    check_cancelled(cancel_check)
                 ws_com.Cells(r, c1).Value = e_values[r - 1]
             print(f"  [列表] 第{c2}列→第{c1}列 ({max_row - 1}行)")
 
@@ -730,45 +702,25 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
             # 第3列→第2列：只写数值
             n2 = 0
             for r in range(2, max_row + 1):
-                if r % 50 == 2:
-                    check_cancelled(cancel_check)
                 val = ws_com.Cells(r, c3).Value
                 if val is not None:
                     ws_com.Cells(r, c2).Value = val
                     n2 += 1
             print(f"  [列表] 第{c3}列→第{c2}列 ({n2}行，仅数值）")
 
-        check_cancelled(cancel_check)
         wb_com.Save()
         wb_com.Close()
-        wb_com = None
         excel_com.Quit()
-        excel_com = None
         _kill_excel_process()
 
         print(f"\n[成功] 已保存")
         return True
-    except PipelineCancelled:
-        print(f"[停止] 用户请求停止，正在关闭Excel: {filepath}")
-        raise
     except Exception as e:
         print(f"[失败] 处理失败: {filepath}: {e}")
         return False
-    finally:
-        if wb_com is not None:
-            try:
-                wb_com.Close(SaveChanges=False)
-            except Exception:
-                pass
-        if excel_com is not None:
-            try:
-                excel_com.Quit()
-            except Exception:
-                pass
-        _kill_excel_process()
 
 # ============ Excel转PDF ============
-def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_check=None):
+def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES):
     """使用Excel COM接口将Excel转换为PDF，保持所有格式。失败自动重试最多3次。"""
     if not os.path.exists(excel_path):
         print(f"[失败] Excel文件不存在: {excel_path}")
@@ -785,7 +737,6 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
     last_error = None
 
     for attempt in range(max_retries):
-        check_cancelled(cancel_check)
         excel = None
         wb = None
         try:
@@ -794,16 +745,13 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
 
             excel = win32com.client.Dispatch("Excel.Application")
             excel.Visible = EXCEL_VISIBLE
-            print(f"[DEBUG Step6] excel_type={EXCEL_TYPE}, EXCEL_VISIBLE={EXCEL_VISIBLE}, Visible set to {EXCEL_VISIBLE}")
             excel.DisplayAlerts = False
             excel.ScreenUpdating = False
 
-            check_cancelled(cancel_check)
             wb = excel.Workbooks.Open(excel_path)
             sheet_count = wb.Worksheets.Count
             print(f"   发现 {sheet_count} 个工作表")
 
-            check_cancelled(cancel_check)
             wb.ExportAsFixedFormat(0, pdf_path)  # 0 = xlTypePDF
 
             if os.path.exists(pdf_path):
@@ -813,9 +761,6 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
             else:
                 print(f"   [失败] PDF生成失败（文件不存在）")
 
-        except PipelineCancelled:
-            print("   [停止] 用户请求停止PDF转换")
-            raise
         except Exception as e:
             last_error = e
             if attempt < max_retries - 1:
@@ -894,7 +839,7 @@ def parse_user_input(raw):
     return n_batches, days_list
 
 
-def process_single_batch(source, latest_issue, batch, n_batches, days, weather_source=None, cancel_check=None):
+def process_single_batch(source, latest_issue, batch, n_batches, days, weather_source=None):
     """
     处理单期：
     - 复制目录
@@ -914,7 +859,6 @@ def process_single_batch(source, latest_issue, batch, n_batches, days, weather_s
     print(f"\n[文件夹] 源目录: {source}")
 
     # 提取年份
-    check_cancelled(cancel_check)
     excel_files = find_excel_files(source)
     if not excel_files:
         print("[失败] 未找到Excel文件，跳过本期")
@@ -922,7 +866,6 @@ def process_single_batch(source, latest_issue, batch, n_batches, days, weather_s
     year = get_year_from_excel(excel_files[0])
 
     # 复制目录
-    check_cancelled(cancel_check)
     result = copy_directory(source, year or datetime.now().year, days, force=True)
     if result is None:
         print("[失败] 复制目录失败，跳过本期")
@@ -938,26 +881,22 @@ def process_single_batch(source, latest_issue, batch, n_batches, days, weather_s
     print("\n" + "=" * 28)
     print("        获取济南天气")
     print("=" * 28)
-    check_cancelled(cancel_check)
     weather = get_weather(new_date)
     print(f"[成功] 获取到天气: {weather}")
 
     # 删除PDF
-    check_cancelled(cancel_check)
     delete_pdfs(target_dir)
 
     # 重命名Excel文件（根据新期数）
     print("\n" + "=" * 28)
     print("        重命名Excel文件")
     print("=" * 28)
-    check_cancelled(cancel_check)
     if issue and new_issue:
         rename_excel_files_by_issue(target_dir, issue, new_issue)
     else:
         print("[警告] 无法解析期数，跳过重命名")
 
     # 处理汇总表
-    check_cancelled(cancel_check)
     files = find_excel_files(target_dir)
     if not files:
         print("[失败] 未找到汇总表，跳过本期")
@@ -968,15 +907,10 @@ def process_single_batch(source, latest_issue, batch, n_batches, days, weather_s
     for i, f in enumerate(files, 1):
         print(f"  {i}. {os.path.basename(f)}")
 
-    ok = 0
-    for f in files:
-        check_cancelled(cancel_check)
-        if process_excel(f, new_date, new_issue, weather, days, cancel_check=cancel_check):
-            ok += 1
+    ok = sum(process_excel(f, new_date, new_issue, weather, days) for f in files)
 
     # 处理外部引用
-    check_cancelled(cancel_check)
-    handle_external_links_auto(target_dir, cancel_check=cancel_check)
+    handle_external_links_auto(target_dir)
 
     # Excel转PDF（只转第XX期.xlsx）
     print("\n" + "=" * 28)
@@ -986,10 +920,9 @@ def process_single_batch(source, latest_issue, batch, n_batches, days, weather_s
     pdf_ok = 0
     all_excels = find_all_excel_files(target_dir)
     for excel_path in all_excels:
-        check_cancelled(cancel_check)
         basename = os.path.basename(excel_path)
         if re.search(r'第\d+期', basename):
-            if excel_to_pdf(excel_path, cancel_check=cancel_check):
+            if excel_to_pdf(excel_path):
                 pdf_ok += 1
         else:
             print(f"  [跳过] 跳过: {basename}")
@@ -1013,25 +946,15 @@ def find_latest_folder(parent_folder):
     return issue_folders[-1] if issue_folders else (None, None)
 
 
-def run_pipeline(source_folder, n_batches, days_list, progress_callback=None, excel_type=None, cancel_check=None):
+def run_pipeline(source_folder, n_batches, days_list, progress_callback=None):
     """
     给GUI用的入口函数，封装process_single_batch
     source_folder: 起始文件夹路径
     n_batches: 总期数
     days_list: 每期间隔天数列表
-    excel_type: "office" 或 "wps"，动态设置 EXCEL_VISIBLE
     progress_callback(status_text, current, total) -> None
-    cancel_check() -> bool，GUI请求停止时返回True
     返回: (success_count, fail_count, results_list)
     """
-    # 动态设置 EXCEL_TYPE 和 EXCEL_VISIBLE（支持 GUI 传入）
-    global EXCEL_TYPE, EXCEL_VISIBLE
-    if excel_type is None:
-        excel_type = os.environ.get("RPT_EXCEL_TYPE", "office")
-    EXCEL_TYPE = excel_type
-    EXCEL_VISIBLE = (EXCEL_TYPE.lower() == "wps")
-    print(f"[DEBUG] run_pipeline excel_type={repr(excel_type)}, EXCEL_VISIBLE={EXCEL_VISIBLE}")
-
     source_path = Path(source_folder)
     parent = source_path.parent if source_path.exists() else Path(source_folder)
     subfolders = [d for d in parent.iterdir() if d.is_dir()]
@@ -1046,47 +969,42 @@ def run_pipeline(source_folder, n_batches, days_list, progress_callback=None, ex
     results = []
     current_source = latest_folder
 
-    try:
-        for batch in range(1, n_batches + 1):
-            check_cancelled(cancel_check)
-            days = days_list[batch - 1] if batch - 1 < len(days_list) else 3
+    for batch in range(1, n_batches + 1):
+        days = days_list[batch - 1] if batch - 1 < len(days_list) else 3
 
-            if progress_callback:
-                progress_callback(f"第{batch}/{n_batches}期 - 复制目录...", batch, n_batches)
+        if progress_callback:
+            progress_callback(f"第{batch}/{n_batches}期 - 复制目录...", batch, n_batches)
 
-            result = process_single_batch(
-                str(current_source), latest_issue, batch, n_batches, days, cancel_check=cancel_check
-            )
+        result = process_single_batch(
+            str(current_source), latest_issue, batch, n_batches, days
+        )
 
-            if result is None:
-                results.append({"status": "fail", "msg": "处理失败"})
-                continue
+        if result is None:
+            results.append({"status": "fail", "msg": "处理失败"})
+            continue
 
-            target_dir, new_date, new_issue, weather, summary = result
-            results.append({
-                "status": "ok",
-                "target_dir": target_dir,
-                "new_date": new_date.strftime('%Y/%m/%d'),
-                "new_issue": new_issue,
-                "weather": weather,
-                "ok": summary["ok"] if summary else 0,
-                "total": summary["total"] if summary else 0,
-                "pdf_ok": summary["pdf_ok"] if summary else 0,
-            })
+        target_dir, new_date, new_issue, weather, summary = result
+        results.append({
+            "status": "ok",
+            "target_dir": target_dir,
+            "new_date": new_date.strftime('%Y/%m/%d'),
+            "new_issue": new_issue,
+            "weather": weather,
+            "ok": summary["ok"] if summary else 0,
+            "total": summary["total"] if summary else 0,
+            "pdf_ok": summary["pdf_ok"] if summary else 0,
+        })
 
-            current_source = Path(target_dir)
-    except PipelineCancelled as e:
-        print(f"[停止] {e}")
-        results.append({"status": "cancelled", "msg": str(e)})
+        current_source = Path(target_dir)
 
     success = sum(1 for r in results if r["status"] == "ok")
     return success, len(results) - success, results
 
 
 def main():
-    base = r"C:\Users\Lenovo\Desktop"
+    base = r"C:\Users\Lenovo\Desktop\工作文件"
     parent_folder_env = os.environ.get('REPORT_MAKER_PARENT')
-    parent_folder = Path(parent_folder_env) if parent_folder_env else Path(base) / "新建文件夹"
+    parent_folder = Path(parent_folder_env) if parent_folder_env else Path(base) / "第87期 04.09"
 
     print("=" * 56)
     print("     Excel汇总表处理 + Excel转PDF 一条龙（批量）")
