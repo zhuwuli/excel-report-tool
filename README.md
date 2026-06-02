@@ -104,7 +104,7 @@ rpt-maker\
 ├── gui_app1.py           # GUI备用版本
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
-│   └── Excel报表工具_v3.9.exe   # 双击exe直接用（有交互界面）
+│   └── Excel报表工具_v3.10.exe  # 双击exe直接用（有交互界面）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
@@ -119,7 +119,7 @@ rpt-maker\
 **你只需要关心 3 个地方：**
 1. **`queue\` 文件夹** - 放要处理的工程
 2. **`queue\done\` 文件夹** - 处理完的工程在这儿
-3. **`dist\Excel报表工具_v3.9.exe`** - 双击运行（有交互界面）
+3. **`dist\Excel报表工具_v3.10.exe`** - 双击运行（有交互界面）
 
 ---
 
@@ -133,11 +133,13 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 ```
 
 ### Q2: 报错"系统找不到指定的路径"
-**原因：** 路径没改对
+**原因：** 工程目录、`queue` 文件夹或 `report_maker.py` 缺失
 **解决：**
-1. 用记事本打开 `run_queue.py`
-2. 检查开头那几行路径是否正确
-3. 确保和你实际存放的位置一致
+1. 确保在项目目录里运行 `python run_queue.py ...`
+2. 确保项目目录下有 `queue\` 文件夹
+3. 确保 `report_maker.py` 和 `run_queue.py` 在同一个项目目录里
+
+> v3.10 Hotfix 后，`run_queue.py` 会自动根据脚本所在目录推导路径，一般不需要手动改路径。
 
 ### Q3: 报错"Python不是内部或外部命令"
 **原因：** Python 没装好，或者环境变量没配
