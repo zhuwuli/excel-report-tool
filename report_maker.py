@@ -30,7 +30,6 @@ import random
 import win32com.client
 import winreg
 import pywinauto
-from pywinauto.timings import wait_until_passes
 
 # 共享工具：颜色输出、IDE环境检测
 from utils import green, red, yellow, cyan, bold, HAS_COLOR
@@ -144,6 +143,17 @@ WMO_CODE_MAP = {                                        # Open-Meteo WMO 代码
 MAX_RETRIES    = 3       # 各操作最大重试次数
 RETRY_BACKOFF   = [1, 2, 4]   # 指数退避间隔（秒）
 
+# Step5 智能等待配置
+STEP5_STARTUP_MIN_WAIT = 0.5
+STEP5_STARTUP_TIMEOUT = 2.0
+STEP5_CALC_MIN_WAIT = 0.5
+STEP5_CALC_TIMEOUT = 5.0
+STEP5_DIALOG_TIMEOUT = {"office": 6.0, "wps": 8.0}
+
+# Excel/WPS 临时锁文件
+TEMP_LOCK_PREFIX = '~$'
+TEMP_EXCEL_EXTS = ('.xls', '.xlsx', '.xlsm')
+
 
 class PipelineCancelled(Exception):
     """用户请求安全停止流水线"""
@@ -191,14 +201,24 @@ def add_trusted_location(folder_path):
         print(f"  [失败] 添加信任位置失败: {e}")
         return False
 
-def _kill_excel_process():
-    """强制杀掉Excel进程，确保COM实例完全释放"""
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "EXCEL.EXE"],
-                       capture_output=True, timeout=5)
-        time.sleep(1.5)  # 等待进程完全退出
-    except Exception:
-        pass
+def _excel_process_names():
+    """根据当前 Excel 类型返回需要清理的进程名"""
+    names = ["EXCEL.EXE"]
+    if EXCEL_TYPE.lower() == "wps":
+        names.append("et.exe")
+    return names
+
+
+def _kill_excel_process(process_names=None):
+    """强制关闭 Excel/WPS 表格进程，确保 COM 实例完全释放"""
+    names = process_names or _excel_process_names()
+    for name in names:
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", name],
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
+    time.sleep(1.5)  # 等待进程完全退出
 
 _desktop = None
 try:
@@ -206,8 +226,60 @@ try:
 except Exception:
     pass
 
-def _click_excel_update_button():
-    """用pywinauto点击Excel'是否更新链接'对话框的'更新'按钮"""
+def _wait_for_excel_ready(excel, cancel_check=None):
+    """至少等待短暂启动缓冲，并在上限内等待 Excel 就绪。"""
+    start = time.monotonic()
+    deadline = start + STEP5_STARTUP_TIMEOUT
+    while True:
+        check_cancelled(cancel_check)
+        elapsed = time.monotonic() - start
+        try:
+            ready = bool(excel.Ready)
+        except Exception:
+            ready = True
+        if elapsed >= STEP5_STARTUP_MIN_WAIT and ready:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
+def _wait_for_excel_calculation(excel, cancel_check=None):
+    """等待链接更新后的计算完成；无法读取状态时保留最小安全等待。"""
+    start = time.monotonic()
+    deadline = start + STEP5_CALC_TIMEOUT
+    while True:
+        check_cancelled(cancel_check)
+        elapsed = time.monotonic() - start
+        try:
+            calculation_done = int(excel.CalculationState) == 0
+            ready = bool(excel.Ready)
+        except Exception:
+            calculation_done = True
+            ready = True
+        if elapsed >= STEP5_CALC_MIN_WAIT and calculation_done and ready:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
+def _workbook_has_external_links(workbook):
+    """返回是否有 Excel 外部链接；接口不兼容时返回 None。"""
+    try:
+        return bool(workbook.LinkSources(1))
+    except Exception:
+        return None
+
+
+def _click_excel_update_button(timeout=None, cancel_check=None):
+    """用pywinauto点击Excel'是否更新链接'对话框的'更新'按钮。"""
+    if _desktop is None:
+        return False
+
+    if timeout is None:
+        timeout = STEP5_DIALOG_TIMEOUT.get(EXCEL_TYPE.lower(), 6.0)
+
     def try_click():
         try:
             for win in _desktop.windows():
@@ -222,11 +294,14 @@ def _click_excel_update_button():
             pass
         return False
 
-    try:
-        wait_until_passes(12, 0.5, try_click)
-        return True
-    except Exception:
-        return False
+    deadline = time.monotonic() + timeout
+    while True:
+        check_cancelled(cancel_check)
+        if try_click():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.25)
 
 def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None):
     """
@@ -239,28 +314,36 @@ def open_and_update_links(excel_path, max_retries=MAX_RETRIES, cancel_check=None
     for attempt in range(max_retries):
         check_cancelled(cancel_check)
         def _do():
+            started_at = time.monotonic()
             check_cancelled(cancel_check)
             _kill_excel_process()
             excel = win32com.client.Dispatch("Excel.Application")
             excel.Visible = EXCEL_VISIBLE
             print(f"[DEBUG Step5] excel_type={EXCEL_TYPE}, EXCEL_VISIBLE={EXCEL_VISIBLE}, Visible set to {EXCEL_VISIBLE}")
             excel.DisplayAlerts = False
-            time.sleep(2.0)
+            if not _wait_for_excel_ready(excel, cancel_check):
+                print("  [提示] Excel 启动等待达到上限，继续尝试打开文件")
 
             wb = excel.Workbooks.Open(excel_path, UpdateLinks=2)
-            time.sleep(2.0)
-
-            clicked = _click_excel_update_button()
-            if clicked:
-                print(f"  [成功] 自动点击了'更新'按钮")
-                time.sleep(1.0)  # 等 Excel 完成链接更新和计算
+            has_external_links = _workbook_has_external_links(wb)
+            if has_external_links is False:
+                print("  [提示] 工作簿无外部链接，跳过更新按钮等待")
             else:
-                print(f"  [提示] 未检测到链接更新对话框（可能无外部链接）")
+                clicked = _click_excel_update_button(cancel_check=cancel_check)
+                if clicked:
+                    print(f"  [成功] 自动点击了'更新'按钮")
+                else:
+                    print(f"  [提示] 未检测到链接更新对话框")
+
+            if not _wait_for_excel_calculation(excel, cancel_check):
+                print("  [提示] Excel 计算等待达到上限，继续保存")
 
             wb.Save()
             wb.Close()
             excel.Quit()
             _kill_excel_process()
+            elapsed = time.monotonic() - started_at
+            print(f"  [耗时] Step5 单文件 {elapsed:.1f}s")
             return True
 
         try:
@@ -319,7 +402,7 @@ def handle_external_links_auto(target_dir, cancel_check=None):
         else:
             fail_count += 1
             print(f"  {red('[失败]')} {basename} 处理失败（已重试{MAX_RETRIES}次）")
-        time.sleep(1.0)
+        time.sleep(0.2)
 
     if progress:
         progress.finish()
@@ -496,15 +579,36 @@ def make_simulated_weather(target_date):
             return f"{weather} {low}~{high}°C"
     return "多云 15~25°C"
 
+def is_temp_excel_file(filename):
+    """判断是否为 WPS/Excel 生成的临时锁文件"""
+    name = os.path.basename(str(filename))
+    return name.startswith(TEMP_LOCK_PREFIX) and name.lower().endswith(TEMP_EXCEL_EXTS)
+
+
+def find_temp_excel_files(directory):
+    """查找目录下残留的 WPS/Excel 临时锁文件"""
+    temp_files = []
+    for root, _, files_list in os.walk(directory):
+        for f in files_list:
+            if is_temp_excel_file(f):
+                temp_files.append(os.path.join(root, f))
+    return temp_files
+
+
+def _ignore_temp_excel_files(_directory, names):
+    """copytree 回调：复制目录时忽略临时锁文件"""
+    return [name for name in names if is_temp_excel_file(name)]
+
+
 def find_excel_files(directory, patterns=None):
     """查找Excel文件，排除WPS/Excel生成的临时锁文件"""
     patterns = patterns or ('汇总', 'summary')
     files = []
     for root, _, files_list in os.walk(directory):
         for f in files_list:
-            if f.startswith('~$'):
+            if is_temp_excel_file(f):
                 continue
-            if f.lower().endswith(('.xls', '.xlsx', '.xlsm')):
+            if f.lower().endswith(TEMP_EXCEL_EXTS):
                 if any(p.lower() in f.lower() for p in patterns):
                     files.append(os.path.join(root, f))
     return files
@@ -514,8 +618,8 @@ def find_all_excel_files(directory):
     return [
         os.path.join(directory, f)
         for f in os.listdir(directory)
-        if f.lower().endswith(('.xls', '.xlsx', '.xlsm'))
-        and not f.startswith('~$')
+        if f.lower().endswith(TEMP_EXCEL_EXTS)
+        and not is_temp_excel_file(f)
     ]
 
 def rename_excel_files_by_issue(directory, old_issue, new_issue):
@@ -547,6 +651,24 @@ def is_date_cell(cell):
         all(f not in fmt for f in ['$', '%', '0', '#', 'general'])
 
 # ============ Excel处理 ============
+def _range_to_column_values(value):
+    """把 Excel Range.Value 统一转换为一维列数据列表"""
+    if isinstance(value, tuple):
+        values = []
+        for item in value:
+            if isinstance(item, tuple):
+                values.append(item[0] if item else None)
+            else:
+                values.append(item)
+        return values
+    return [value]
+
+
+def _column_values_to_range(values):
+    """把一维列数据转换为 Excel Range.Value 需要的二维列形状"""
+    return tuple((value,) for value in values)
+
+
 def modify_cover(wb, issue_num, weather, date):
     """修改封面（期数、天气）"""
     try:
@@ -706,17 +828,12 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
             time.sleep(1.0)
 
             # 数据迁移：第2列→第1列（触发重新计算）
-            e_values = []
-            for r in range(1, max_row + 1):
-                if r % 50 == 1:
-                    check_cancelled(cancel_check)
-                e_values.append(ws_com.Cells(r, c2).Value)
-
-            for r in range(1, max_row + 1):
-                if r % 50 == 1:
-                    check_cancelled(cancel_check)
-                ws_com.Cells(r, c1).Value = e_values[r - 1]
-            print(f"  [列表] 第{c2}列→第{c1}列 ({max_row - 1}行)")
+            check_cancelled(cancel_check)
+            c2_range = ws_com.Range(ws_com.Cells(1, c2), ws_com.Cells(max_row, c2))
+            c1_range = ws_com.Range(ws_com.Cells(1, c1), ws_com.Cells(max_row, c1))
+            c2_values = _range_to_column_values(c2_range.Value)
+            c1_range.Value = _column_values_to_range(c2_values)
+            print(f"  [列表] 第{c2}列→第{c1}列 ({max_row - 1}行，Range批量)")
 
             # 修改表头日期
             old_date = ws_com.Cells(1, c2).Value
@@ -727,16 +844,25 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
             ws_com.Calculate()
             time.sleep(1.0)
 
-            # 第3列→第2列：只写数值
-            n2 = 0
-            for r in range(2, max_row + 1):
-                if r % 50 == 2:
-                    check_cancelled(cancel_check)
-                val = ws_com.Cells(r, c3).Value
-                if val is not None:
-                    ws_com.Cells(r, c2).Value = val
-                    n2 += 1
-            print(f"  [列表] 第{c3}列→第{c2}列 ({n2}行，仅数值）")
+            # 第3列→第2列：只写数值，保持空值不覆盖的原逻辑
+            check_cancelled(cancel_check)
+            if max_row >= 2:
+                c3_data_range = ws_com.Range(ws_com.Cells(2, c3), ws_com.Cells(max_row, c3))
+                c2_data_range = ws_com.Range(ws_com.Cells(2, c2), ws_com.Cells(max_row, c2))
+                c3_values = _range_to_column_values(c3_data_range.Value)
+                old_c2_values = c2_values[1:]
+                merged_values = []
+                n2 = 0
+                for idx, val in enumerate(c3_values):
+                    if val is not None:
+                        merged_values.append(val)
+                        n2 += 1
+                    else:
+                        merged_values.append(old_c2_values[idx] if idx < len(old_c2_values) else None)
+                c2_data_range.Value = _column_values_to_range(merged_values)
+            else:
+                n2 = 0
+            print(f"  [列表] 第{c3}列→第{c2}列 ({n2}行，仅数值，Range批量）")
 
         check_cancelled(cancel_check)
         wb_com.Save()
@@ -864,8 +990,11 @@ def copy_directory(src, year, days, force=False):
             print(f"[失败] 删除已有目录失败: {e}")
             return None
 
-    shutil.copytree(src, dst)
+    skipped_temp_files = find_temp_excel_files(src)
+    shutil.copytree(src, dst, ignore=_ignore_temp_excel_files)
     print(f"[成功] {src} -> {dst}")
+    if skipped_temp_files:
+        print(f"[清理] 复制时已跳过 {len(skipped_temp_files)} 个 Excel/WPS 临时锁文件")
     return str(dst), new_date
 
 def delete_pdfs(directory):
@@ -1013,6 +1142,64 @@ def find_latest_folder(parent_folder):
     return issue_folders[-1] if issue_folders else (None, None)
 
 
+def preflight_check(source_folder, excel_type=None):
+    """运行前轻量自检，尽早发现目录和配置问题"""
+    excel_type = (excel_type or EXCEL_TYPE).lower()
+    issues = []
+    warnings_list = []
+
+    if excel_type not in ("office", "wps"):
+        issues.append(f"Excel 类型无效: {excel_type}，应为 office 或 wps")
+
+    if _desktop is None:
+        warnings_list.append("pywinauto 桌面对象初始化失败，外部链接弹窗可能无法自动点击")
+
+    try:
+        import win32com.client as _win32com_client  # noqa: F401
+    except Exception as e:
+        issues.append(f"pywin32 / win32com 不可用: {e}")
+
+    source_path = Path(source_folder)
+    if not source_path.exists():
+        issues.append(f"起始路径不存在: {source_path}")
+        return False, None, issues, warnings_list
+
+    if source_path.is_dir() and parse_folder_info(source_path.name)[0] is not None:
+        parent = source_path.parent
+    else:
+        parent = source_path
+    if not parent.exists():
+        issues.append(f"父目录不存在: {parent}")
+        return False, None, issues, warnings_list
+
+    latest_issue, latest_folder = find_latest_folder(parent)
+    if latest_folder is None:
+        issues.append(f"未在父目录中找到形如 第43期 05.30 的期数文件夹: {parent}")
+        return False, None, issues, warnings_list
+
+    excel_files = find_excel_files(latest_folder)
+    if not excel_files:
+        issues.append(f"最新一期中未找到汇总表: {latest_folder}")
+
+    temp_files = find_temp_excel_files(latest_folder)
+    if temp_files:
+        warnings_list.append(f"最新一期存在 {len(temp_files)} 个 ~$ 临时锁文件，程序会跳过且复制新目录时不再带入")
+
+    return not issues, (latest_issue, latest_folder), issues, warnings_list
+
+
+def print_preflight_result(ok, issues, warnings_list):
+    """打印运行前自检结果"""
+    print("\n[自检] 运行前检查")
+    for item in warnings_list:
+        print(f"  [提醒] {item}")
+    if ok:
+        print("  [通过] 基础环境和工程目录检查通过")
+    else:
+        for item in issues:
+            print(f"  [失败] {item}")
+
+
 def run_pipeline(source_folder, n_batches, days_list, progress_callback=None, excel_type=None, cancel_check=None):
     """
     给GUI用的入口函数，封装process_single_batch
@@ -1032,16 +1219,12 @@ def run_pipeline(source_folder, n_batches, days_list, progress_callback=None, ex
     EXCEL_VISIBLE = (EXCEL_TYPE.lower() == "wps")
     print(f"[DEBUG] run_pipeline excel_type={repr(excel_type)}, EXCEL_VISIBLE={EXCEL_VISIBLE}")
 
-    source_path = Path(source_folder)
-    parent = source_path.parent if source_path.exists() else Path(source_folder)
-    subfolders = [d for d in parent.iterdir() if d.is_dir()]
-    issue_folders = [
-        (parse_folder_info(d.name)[0], d)
-        for d in subfolders
-        if parse_folder_info(d.name)[0] is not None
-    ]
-    issue_folders.sort(key=lambda x: x[0])
-    latest_issue, latest_folder = issue_folders[-1] if issue_folders else (87, source_path)
+    ok, latest_info, issues, warnings_list = preflight_check(source_folder, excel_type=EXCEL_TYPE)
+    print_preflight_result(ok, issues, warnings_list)
+    if not ok:
+        return 0, 1, [{"status": "fail", "msg": "运行前自检失败", "issues": issues}]
+
+    latest_issue, latest_folder = latest_info
 
     results = []
     current_source = latest_folder
@@ -1093,14 +1276,11 @@ def main():
     print("=" * 56)
 
     # 找出当前最新的一期作为起始点
-    subfolders = [d for d in parent_folder.iterdir() if d.is_dir()]
-    issue_folders = [
-        (parse_folder_info(d.name)[0], d)
-        for d in subfolders
-        if parse_folder_info(d.name)[0] is not None
-    ]
-    issue_folders.sort(key=lambda x: x[0])
-    latest_issue, latest_folder = issue_folders[-1]
+    ok, latest_info, issues, warnings_list = preflight_check(parent_folder, excel_type=EXCEL_TYPE)
+    print_preflight_result(ok, issues, warnings_list)
+    if not ok:
+        return
+    latest_issue, latest_folder = latest_info
     print(f"\n检测到最新一期: {latest_folder.name}")
     print(f"   将以此为起点制作新一期")
 

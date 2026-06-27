@@ -4,6 +4,84 @@
 
 ---
 
+## v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
+
+### STEP4：Range 批量迁移
+- 日期列迁移由逐单元格 COM 读写改为整段 `Range.Value` 批量读写
+- 保留“第3列为空时不覆盖第2列已有值”的原业务规则
+- 大幅减少跨进程 COM 调用，数据行越多收益越明显
+
+### STEP5：智能等待
+- 启动固定等待 2 秒改为检测 `Ready`：至少 0.5 秒、最多 2 秒
+- 使用 `LinkSources(1)` 检测外部链接，无链接时跳过按钮等待
+- 修复 `wait_until_passes()` 不会按 `False` 返回值持续等待的问题
+- 更新按钮每 0.25 秒轮询，Office/WPS 上限分别为 6 秒/8 秒
+- 更新后检测 `CalculationState`：至少 0.5 秒、最多 5 秒
+- 文件间隔由 1 秒缩短为 0.2 秒，新增单文件耗时日志
+- 保留逐文件实例、保存关闭、进程清理、重试和安全停止逻辑
+
+### 验证与备份
+- 语法检查及 STEP4/STEP5 模拟测试通过
+- 未自动运行真实 Excel COM 测试，避免关闭用户当前工作簿
+- STEP4 备份：`.backup\20260626_164422\report_maker.before-step4-range.py`
+- STEP5 备份：`.backup\20260627_090812\report_maker.before-step5-smart-wait.py`
+
+---
+
+## v3.10 Hotfix (2026-06-26) - 开发环境与打包修复
+
+### 环境与原因
+- 旧 `.venv` 指向已不存在的 `C:\Python314`，使用 `D:\mysoftware\python\python.exe`（Python 3.8.6）重建
+- PyQt5、openpyxl、win32com、pywinauto、requests、PyInstaller、tqdm 导入验证通过
+- `(.venv) (base)` 共存时，直接执行 `pyinstaller` 实际可能命中 `F:\anaconda\Scripts\pyinstaller.exe`
+- `--collect-all pywinauto` 配合复杂 Anaconda 环境可能收集 pandas、scipy、sklearn、Jupyter 等无关包，导致 exe 增长到约 600 MB
+
+### 当前推荐打包命令
+```powershell
+python -m PyInstaller --onefile --clean `
+  --hidden-import win32timezone `
+  --hidden-import win32crypt `
+  --hidden-import pywinauto `
+  --hidden-import pywinauto.keyboard `
+  --hidden-import pywinauto.timings `
+  --hidden-import pywinauto.application `
+  --hidden-import pywinauto.findwindows `
+  --name "Excel报表工具_v3.10_hotfix" gui_app.py
+```
+
+---
+
+## v3.10 Hotfix (2026-06-26) - 鲁棒性增强
+
+### 问题修复
+- **WPS 安全停止后可能仍残留表格进程**
+  - 原因：原清理逻辑只固定清理 `EXCEL.EXE`，WPS 表格常见进程为 `et.exe`
+  - 解决：新增 `_excel_process_names()`，WPS 模式下同时尝试清理 `EXCEL.EXE` 和 `et.exe`
+- **`~$` 临时锁文件会被复制到新一期目录**
+  - 原因：旧逻辑只在查找 Excel 文件时跳过 `~$`，但 `shutil.copytree()` 会原样复制隐藏临时文件
+  - 解决：复制目录时通过 `ignore` 回调过滤 `~$*.xls` / `~$*.xlsx` / `~$*.xlsm`
+
+### 新增功能
+- **运行前轻量自检**
+  - 正式处理前检查工程路径、最新一期文件夹、汇总表、Excel 类型和自动化依赖
+  - 如果最新一期存在 `~$` 临时锁文件，会提示但不中断；程序会跳过并避免复制到新目录
+  - GUI 和命令行入口都会先执行自检
+
+### 代码修改
+- `report_maker.py`：新增 `TEMP_LOCK_PREFIX`、`TEMP_EXCEL_EXTS` 临时文件配置
+- `report_maker.py`：新增 `is_temp_excel_file()`、`find_temp_excel_files()`、`_ignore_temp_excel_files()`
+- `report_maker.py`：`copy_directory()` 复制时过滤临时锁文件
+- `report_maker.py`：`_kill_excel_process()` 支持按 Excel 类型清理 Office/WPS 进程
+- `report_maker.py`：新增 `preflight_check()`、`print_preflight_result()`，并接入 `run_pipeline()` 和 `main()`
+
+### 验证
+- `python -m py_compile report_maker.py gui_app.py run_queue.py utils.py` 通过
+- 验证 WPS 模式进程名单包含 `et.exe`
+- 验证复制新目录时 `~$` 临时锁文件不会被带入
+- 验证运行前自检可识别工程父目录和某一期目录
+
+---
+
 ## v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 ### 问题修复
@@ -80,7 +158,7 @@
 ### 打包命令
 ```bash
 # 命令行方式
-pyinstaller --onefile --collect-all pywinauto --hidden-import win32timezone --hidden-import win32crypt  --name "Excel报表工具_GUI版_v3.10" gui_app.py
+python -m PyInstaller --onefile --clean --hidden-import win32timezone --hidden-import win32crypt --hidden-import pywinauto --hidden-import pywinauto.keyboard --hidden-import pywinauto.timings --hidden-import pywinauto.application --hidden-import pywinauto.findwindows --name "Excel报表工具_GUI版_v3.10" gui_app.py
 ```
 
 ### exe相关文件
@@ -491,7 +569,7 @@ python run_queue.py --dry-run
 ## 📊 项目状态
 
 **当前版本**：**v3.10**（exe无终端 + Office/WPS下拉框）  
-**最后更新**：2026-06-02  
+**最后更新**：2026-06-27
 **维护者**：朱无理  
 **Python版本**：3.8+  
 **操作系统**：Windows 10/11  
@@ -514,4 +592,4 @@ F:\myproject\rpt-maker\
 └── PROJECT_LOG.txt         # 详细开发记录
 ```
 
-*文档最后更新：2026-06-02*
+*文档最后更新：2026-06-27*

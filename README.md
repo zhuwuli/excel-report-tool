@@ -98,17 +98,15 @@
 ```
 rpt-maker\
 ├── report_maker.py       # 主程序（六步核心逻辑）
-├── report_maker1.py      # 备用版本
 ├── run_queue.py          # CLI批量调度器
 ├── gui_app.py            # GUI打包入口（PyQt5）
-├── gui_app1.py           # GUI备用版本
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
 │   └── Excel报表工具_v3.10.exe  # 双击exe直接用（有交互界面）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
-├── .archive\            # 历史版本存档
+├── .archive\            # 历史版本存档（旧版 report_maker / gui_app 备份）
 ├── .idea\               # PyCharm配置
 ├── .venv\               # Python虚拟环境
 ├── README.md            # 说明文档
@@ -149,8 +147,8 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 3. 安装完成后重新打开命令提示符
 
 ### Q4: 运行后卡住了
-**原因：** Step5 在等 Excel 响应
-**解决：** 等待即可，最多等 2 分钟。如果超过 2 分钟，按 `Ctrl + C` 停止，然后重试。
+**原因：** Step5 可能正在等待 Excel/WPS 启动、外部链接更新或公式计算。
+**解决：** 当前版本已改为智能等待：Office 更新按钮最多等待 6 秒，WPS 最多等待 8 秒，公式计算最多等待 5 秒；状态就绪后会立即继续。若单个文件长时间无新日志，可点击 GUI 的“停止”进行安全退出后重试。
 
 ### Q5: 天气显示"模拟天气"
 **原因：** 天气 API 查不到（日期太远或网络问题）
@@ -163,7 +161,15 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 2. 删除工程目录里所有 `~$` 开头的文件
 3. 使用已修复版本重新运行
 
-**代码修复：** `report_maker.py` 的 `find_excel_files()` 已增加过滤逻辑，会自动跳过 `~$` 临时文件。
+**代码修复：** `report_maker.py` 的 `find_excel_files()` 已增加过滤逻辑，会自动跳过 `~$` 临时文件；复制新一期目录时也会自动过滤 `~$` 临时锁文件，避免继续带入新目录。
+
+### Q7: 一开始就提示"运行前自检失败"
+**原因：** 程序在正式处理前发现基础条件不满足，例如工程路径不存在、找不到最新一期文件夹、最新一期里没有汇总表，或 Excel 自动化依赖不可用。
+**解决：**
+1. 检查选择的目录是否是工程目录或某一期目录
+2. 确认目录里有形如 `第43期 05.30` 的文件夹
+3. 确认最新一期里有 `汇总表.xlsx`
+4. 如果提示依赖不可用，重新安装：`pip install pywin32 pywinauto`
 
 ---
 
@@ -351,6 +357,31 @@ EXCEL_TYPE = "wps"      # WPS（窗口会闪一下，但自动化正常）
 pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 ```
 
+### 开发环境与 exe 打包
+
+项目当前 `.venv` 使用 Python 3.8.6。打包前应确认终端只激活项目虚拟环境，并检查解释器路径：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -c "import sys; print(sys.executable)"
+```
+
+输出应指向 `rpt-maker\.venv\Scripts\python.exe`。推荐使用：
+
+```powershell
+python -m PyInstaller --onefile --clean `
+  --hidden-import win32timezone `
+  --hidden-import win32crypt `
+  --hidden-import pywinauto `
+  --hidden-import pywinauto.keyboard `
+  --hidden-import pywinauto.timings `
+  --hidden-import pywinauto.application `
+  --hidden-import pywinauto.findwindows `
+  --name "Excel报表工具_v3.10_hotfix" gui_app.py
+```
+
+不要在当前环境使用 `--collect-all pywinauto`。如果打包日志显示 `Python environment: F:\anaconda`，说明实际调用了 Anaconda 的 PyInstaller，可能把 pandas、scipy、sklearn、Jupyter 等无关依赖一起收集，导致 exe 从约 66 MB 增长到数百 MB。
+
 ### 系统要求
 - Windows 10/11
 - Microsoft Excel 2016+ 或 WPS
@@ -484,6 +515,52 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
+### v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
+
+**STEP4 数据迁移优化**：
+- Excel 单元格逐行 COM 读写改为 `Range.Value` 批量读写
+- 保留“第3列为空时不覆盖第2列原值”的业务规则
+- 备份：`.backup\20260626_164422\report_maker.before-step4-range.py`
+
+**STEP5 智能等待优化**：
+- 启动等待由固定 2 秒改为检测 `Excel.Ready`，至少 0.5 秒、最多 2 秒
+- 无外部链接的工作簿直接跳过更新按钮等待
+- Office/WPS 更新按钮分别最多轮询 6 秒/8 秒，找到后立即继续
+- 更新后的固定 1 秒改为检测 `CalculationState`，至少 0.5 秒、最多 5 秒
+- 文件间隔由 1 秒缩短为 0.2 秒，并新增单文件耗时日志
+- 保留逐文件启动、保存、关闭和进程清理逻辑
+
+**验证**：
+- `python -m py_compile report_maker.py gui_app.py run_queue.py` 通过
+- STEP4 Range 数据形状与空值保留辅助测试通过
+- STEP5 就绪等待、计算等待、链接检测、按钮轮询、安全取消和完整模拟流程通过
+
+---
+
+### v3.10 Hotfix (2026-06-26) - 开发环境与打包修复
+
+- 发现旧 `.venv` 指向已不存在的 `C:\Python314`，使用本机 Python 3.8.6 重建
+- 新 `.venv` 已验证 PyQt5、openpyxl、win32com、pywinauto、requests、PyInstaller、tqdm 可导入
+- 确认同时显示 `(.venv) (base)` 时，直接执行 `pyinstaller` 仍可能调用 `F:\anaconda\Scripts\pyinstaller.exe`
+- 打包方式改为项目环境中的 `python -m PyInstaller`
+- 移除推荐命令中的 `--collect-all pywinauto`，避免 Anaconda 无关依赖导致 exe 膨胀到约 600 MB
+
+---
+
+### v3.10 Hotfix (2026-06-26) - 鲁棒性增强
+
+**新增增强**：
+- WPS 模式下清理 `EXCEL.EXE` 的同时额外清理 `et.exe`
+- 复制新一期目录时自动过滤 `~$` 开头的 Excel/WPS 临时锁文件
+- 新增运行前轻量自检，提前检查路径、最新一期、汇总表、Excel 类型和自动化依赖
+
+**验证**：
+- `python -m py_compile report_maker.py gui_app.py run_queue.py utils.py` 通过
+- 临时目录测试确认 `~$` 文件不会被复制到新一期
+- 自检测试确认工程父目录和某一期目录均可识别最新一期
+
+---
+
 ### v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 **问题修复**：
@@ -784,16 +861,16 @@ F:\myproject\rpt-maker\.logs\
 | 项目 | 内容 |
 |------|------|
 | 当前版本 | **v3.10** |
-| 最后更新 | 2026-06-02 |
+| 最后更新 | 2026-06-27 |
 | 维护者 | 朱无理 |
-| 项目历时 | 2026-04-08 至 2026-04-30（22天） |
+| 项目历时 | 2026-04-08 至 2026-06-27 |
 | Python版本 | 3.8+ |
 | 操作系统 | Windows 10/11 |
 | 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz |
 
 ---
 
-*最后更新：2026-06-02*
+*最后更新：2026-06-27*
 *版本：v3.10*
 
 </details>

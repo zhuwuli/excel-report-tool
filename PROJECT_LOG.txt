@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║          Excel 汇总表自动处理工具 - 完整项目记录                              ║
-║                   2026-04-08 至 2026-06-02                                  ║
+║                   2026-04-08 至 2026-06-27                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -441,7 +441,7 @@
   操作系统：Windows 10/11
   Python版本：3.8+
 
-*文档最后更新：2026-06-02*
+*文档最后更新：2026-06-27*
 
 ══════════════════════════════════════════════════════════════════════════════
 『 2026-05-06 』第二十三天 - 项目发布到 GitHub（根据备份整理）
@@ -715,3 +715,140 @@
   ■ 注意：
     - PYTHON = sys.executable 意味着调度器会使用当前 Python 环境
     - 运行前仍需确保当前 Python 已安装 openpyxl、pywin32、pywinauto、requests、PyQt5 等依赖
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-26 』v3.10 Hotfix - 鲁棒性增强
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 优化背景：
+    - 现有版本已经修复了 GUI 安全停止和 ~$ 临时文件误打开问题
+    - 继续针对最近暴露出的稳定性隐患做小范围增强
+    - 目标是不改变原有六步业务逻辑，只增强运行前检查、复制过滤和进程清理
+
+  ■ 优化 1：WPS 进程清理增强
+    - 原逻辑：_kill_excel_process() 固定清理 EXCEL.EXE
+    - 问题：WPS 表格常见进程为 et.exe，WPS 模式下可能清理不完整
+    - 修复：新增 _excel_process_names()
+      1. Office 模式清理 EXCEL.EXE
+      2. WPS 模式清理 EXCEL.EXE + et.exe
+    - 影响：安全停止、异常收尾、PDF 转换失败收尾时，对 WPS 更友好
+
+  ■ 优化 2：复制目录时过滤 ~$ 临时锁文件
+    - 原逻辑：find_excel_files() / find_all_excel_files() 会跳过 ~$ 文件
+    - 问题：copy_directory() 使用 shutil.copytree()，仍会把隐藏的 ~$ 文件复制到新一期目录
+    - 修复：
+      1. 新增 TEMP_LOCK_PREFIX = '~$'
+      2. 新增 TEMP_EXCEL_EXTS = ('.xls', '.xlsx', '.xlsm')
+      3. 新增 is_temp_excel_file()
+      4. 新增 find_temp_excel_files()
+      5. 新增 _ignore_temp_excel_files()
+      6. copy_directory() 调用 shutil.copytree(..., ignore=_ignore_temp_excel_files)
+    - 结果：新一期目录不再继续带入 ~$汇总表.xlsx、~$第XX期.xlsx 等临时锁文件
+
+  ■ 优化 3：运行前轻量自检
+    - 新增 preflight_check()
+    - 新增 print_preflight_result()
+    - 正式处理前检查：
+      1. Excel 类型是否为 office / wps
+      2. pywin32 / win32com 是否可用
+      3. pywinauto 桌面对象是否初始化成功
+      4. 起始路径是否存在
+      5. 是否能找到形如“第43期 05.30”的最新一期文件夹
+      6. 最新一期里是否能找到汇总表
+      7. 最新一期是否存在 ~$ 临时锁文件
+    - 接入位置：
+      1. run_pipeline()：GUI 入口先自检，失败时返回 status=fail
+      2. main()：命令行入口先自检，失败时直接返回
+    - 说明：自检不会主动拉起 Excel/WPS，避免启动阶段打扰用户当前打开的表格
+
+  ■ 修改文件：
+    - report_maker.py：新增进程清理、临时文件过滤、运行前自检逻辑
+    - README.md：新增 Q7 自检失败说明，版本历史加入 2026-06-26 Hotfix
+    - CHANGELOG.md：顶部新增 2026-06-26 Hotfix 记录
+    - PROJECT_LOG.txt：追加本次开发记录
+
+  ■ 备份文件：
+    - .backup\20260626_144152\report_maker.py
+    - .backup\20260626_144152\README.before-md-update.md
+    - .backup\20260626_144152\CHANGELOG.before-md-update.md
+    - .backup\20260626_144152\PROJECT_LOG.before-txt-update.txt
+
+  ■ 验证结果：
+    - python -m py_compile report_maker.py gui_app.py run_queue.py utils.py 通过
+    - WPS 模式进程名单验证：['EXCEL.EXE', 'et.exe']
+    - 临时目录测试：复制新一期时 ~$ 文件未被带入
+    - 自检测试：工程父目录和某一期目录均可正确识别最新一期
+
+  ■ 注意：
+    - 这次没有修改 Excel 表格处理的核心业务逻辑
+    - 复制时过滤的是 Excel/WPS 临时锁文件，不会删除源目录中的原始 ~$ 文件
+    - 如果源目录已有残留 ~$ 文件，自检会提醒，但不会中断处理
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-26 』v3.10 Hotfix - 开发环境、打包与 STEP4 性能优化
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 虚拟环境排查与修复：
+    - 旧项目 .venv 的 pyvenv.cfg 指向 C:\Python314，该解释器已不存在
+    - 使用 D:\mysoftware\python\python.exe（Python 3.8.6）重建 .venv
+    - 新环境采用 include-system-site-packages = true
+    - 导入验证通过：PyQt5、openpyxl、win32com、pywinauto、requests、PyInstaller、tqdm
+
+  ■ exe 体积从约 66 MB 增长到约 600 MB 的原因：
+    - 终端提示符同时出现 (.venv) (base)
+    - 直接运行 pyinstaller 时，实际调用 F:\anaconda\Scripts\pyinstaller.exe
+    - 打包日志明确显示 Python environment: F:\anaconda
+    - --collect-all pywinauto 在复杂 Anaconda 环境中扩大了依赖收集范围
+    - pandas、scipy、sklearn、Jupyter 等无关包可能被一起打入
+
+  ■ 修正后的打包原则：
+    - 只激活项目 .venv，并核对 sys.executable 指向项目 .venv
+    - 使用 python -m PyInstaller，避免命中 PATH 中的 Anaconda 可执行文件
+    - 不再使用 --collect-all pywinauto，仅添加实际需要的隐藏导入
+
+  ■ STEP4 Range 批量迁移优化：
+    - 原逻辑逐单元格 COM 读写，数据行较多时跨进程调用次数很高
+    - 第2列→第1列改为整段 Range.Value 批量读取和写入
+    - 第3列→第2列改为批量读取、内存合并后一次写入
+    - 保留原逻辑：第3列为空时，不覆盖第2列已有值
+    - 新增 _range_to_column_values() 和 _column_values_to_range()
+
+  ■ STEP4 备份与验证：
+    - 备份：.backup\20260626_164422\report_maker.before-step4-range.py
+    - 语法检查、Range 数据形状转换和空值不覆盖测试通过
+    - 未运行真实 Excel COM 自动测试，避免影响用户工作簿
+
+══════════════════════════════════════════════════════════════════════════════
+『 2026-06-27 』v3.10 Hotfix - STEP5 智能等待优化
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 原等待逻辑与问题：
+    - Excel 启动、工作簿打开、更新完成和文件间隔均使用固定 sleep
+    - _click_excel_update_button() 使用 wait_until_passes(12, 0.5, try_click)
+    - wait_until_passes() 判断函数是否抛异常，不判断 False 返回值
+    - try_click() 未找到按钮时返回 False，因此所谓 12 秒等待可能首次调用就结束
+
+  ■ 智能等待方案：
+    - Excel 启动检测 Ready：至少 0.5 秒、最多 2 秒
+    - LinkSources(1) 检测外部链接，无链接时跳过按钮等待
+    - 更新按钮每 0.25 秒轮询，Office/WPS 上限分别为 6 秒/8 秒
+    - 更新后检测 CalculationState 和 Ready：至少 0.5 秒、最多 5 秒
+    - 文件间隔由 1 秒缩短为 0.2 秒，新增单文件耗时日志
+
+  ■ 风险控制：
+    - 保留逐文件 Excel/WPS 实例、保存、关闭、Quit 和进程清理
+    - 保留重试、指数退避和安全取消检查
+    - 状态读取失败时仍保留最小 0.5 秒安全等待
+
+  ■ 备份与验证：
+    - 备份：.backup\20260627_090812\report_maker.before-step5-smart-wait.py
+    - python -m py_compile report_maker.py gui_app.py run_queue.py 通过
+    - 就绪、计算、链接、按钮轮询、安全取消测试通过
+    - 完整模拟流程验证：无链接跳过、有链接更新、均保存/关闭/Quit
+    - 未启动真实 Excel 自动测试，避免关闭用户当前打开的文件
+
+  ■ 文档同步：
+    - README.md：更新卡顿说明、开发环境、打包命令、版本历史和日期
+    - CHANGELOG.md：补充环境修复、STEP4、STEP5 和验证记录
+    - PROJECT_LOG.txt：补齐 2026-06-26 至 2026-06-27 的开发过程
+    - 文档备份：.backup\20260627_095438
