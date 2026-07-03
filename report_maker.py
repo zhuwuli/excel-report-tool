@@ -212,10 +212,22 @@ def _excel_process_names():
 def _kill_excel_process(process_names=None):
     """强制关闭 Excel/WPS 表格进程，确保 COM 实例完全释放"""
     names = process_names or _excel_process_names()
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    startupinfo = None
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+
     for name in names:
         try:
-            subprocess.run(["taskkill", "/F", "/IM", name],
-                           capture_output=True, timeout=5)
+            subprocess.run(
+                ["taskkill", "/F", "/IM", name],
+                capture_output=True,
+                timeout=5,
+                creationflags=creationflags,
+                startupinfo=startupinfo,
+            )
         except Exception:
             pass
     time.sleep(1.5)  # 等待进程完全退出

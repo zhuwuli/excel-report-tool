@@ -1,4 +1,4 @@
-# Excel汇总表自动处理工具 v3.10
+# Excel汇总表自动处理工具 v3.11
 
 > 自动把工程监测数据做成 PDF 报表，六步流程一键完成。
 
@@ -8,13 +8,14 @@
 
 ### 双击 exe 运行（最简单）
 
-1. 双击 `dist\Excel报表工具_v3.10.exe`
+1. 双击 `dist\ExcelReportTool_v3.11_Windows_x64.exe`
 2. 选择 Excel 类型（Microsoft Office 或 WPS Office）
 3. 点击"选择文件夹"，找到工程文件夹
 4. 填总期数和各期间隔天数
 5. 点击"开始处理"
 
 > Office 模式窗口隐藏静默运行，WPS 模式窗口会闪现一下，均能正常自动化处理。
+> v3.11 起推荐使用 `--windowed` 无黑框 exe，运行错误会直接显示在 GUI 实时日志中。
 
 ### 工程文件夹准备
 
@@ -45,7 +46,7 @@
 **方式一：直接双击 exe（最简单，推荐）**
 
 1. 进入 `dist\` 文件夹
-2. 双击 `Excel报表工具_v3.10.exe`
+2. 双击 `ExcelReportTool_v3.11_Windows_x64.exe`
 3. 弹出图形界面
 4. 选择 Excel 类型
 5. 点击"选择文件夹" → 找到工程文件夹
@@ -102,7 +103,7 @@ rpt-maker\
 ├── gui_app.py            # GUI打包入口（PyQt5）
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
-│   └── Excel报表工具_v3.10.exe  # 双击exe直接用（有交互界面）
+│   └── ExcelReportTool_v3.11_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
@@ -117,7 +118,7 @@ rpt-maker\
 **你只需要关心 3 个地方：**
 1. **`queue\` 文件夹** - 放要处理的工程
 2. **`queue\done\` 文件夹** - 处理完的工程在这儿
-3. **`dist\Excel报表工具_v3.10.exe`** - 双击运行（有交互界面）
+3. **`dist\ExcelReportTool_v3.11_Windows_x64.exe`** - 双击运行（无黑框GUI）
 
 ---
 
@@ -377,7 +378,7 @@ python -m PyInstaller --onefile --clean `
   --hidden-import pywinauto.timings `
   --hidden-import pywinauto.application `
   --hidden-import pywinauto.findwindows `
-  --name "Excel报表工具_v3.10_hotfix" gui_app.py
+  --name "ExcelReportTool_v3.11_Windows_x64" gui_app.py
 ```
 
 不要在当前环境使用 `--collect-all pywinauto`。如果打包日志显示 `Python environment: F:\anaconda`，说明实际调用了 Anaconda 的 PyInstaller，可能把 pandas、scipy、sklearn、Jupyter 等无关依赖一起收集，导致 exe 从约 66 MB 增长到数百 MB。
@@ -515,6 +516,16 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
+### v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
+- GUI 从原单列表单改为“工作台”布局：顶部品牌区、左侧任务配置、右侧运行状态与实时日志
+- 界面版本号更新为 `v3.11`，推荐 exe 名称更新为 `ExcelReportTool_v3.11_Windows_x64.exe`
+- `--windowed` 打包适配：`sys.stdout/sys.stderr` 为 `None` 时自动兜底，避免无控制台环境闪退
+- 后台 `print()`、`stderr` 和异常 traceback 会转入 GUI 日志区，错误不再只出现在黑框
+- `_kill_excel_process()` 调用 `taskkill` 时隐藏子进程窗口，避免运行中闪出 `taskkill` 黑框
+- 实时日志增加颜色区分，成功、警告、失败和处理中信息更容易辨认
+- 左侧配置区重排并修复小窗口下文字重叠、按钮压住内容的问题
+- 保留原 Excel/WPS 自动化处理逻辑，本次主要是 GUI 与发布体验升级
+
 ### v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
 
 **STEP4 数据迁移优化**：
@@ -595,7 +606,7 @@ F:\myproject\rpt-maker\.logs\
 
 ---
 
-### v3.10 (2026-04-30) - Office/WPS下拉框 
+### v3.10 (2026-04-30) - Office/WPS下拉框
 
 **新增功能**：
 - **Office/WPS下拉框**：gui_app.py 参数区新增下拉框，运行时切换 Excel 类型
@@ -860,17 +871,17 @@ F:\myproject\rpt-maker\.logs\
 
 | 项目 | 内容 |
 |------|------|
-| 当前版本 | **v3.10** |
-| 最后更新 | 2026-06-27 |
+| 当前版本 | **v3.11** |
+| 最后更新 | 2026-07-03 |
 | 维护者 | 朱无理 |
-| 项目历时 | 2026-04-08 至 2026-06-27 |
+| 项目历时 | 2026-04-08 至 2026-07-03 |
 | Python版本 | 3.8+ |
 | 操作系统 | Windows 10/11 |
 | 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz |
 
 ---
 
-*最后更新：2026-06-27*
-*版本：v3.10*
+*最后更新：2026-07-03*
+*版本：v3.11*
 
 </details>

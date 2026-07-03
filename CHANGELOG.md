@@ -4,6 +4,42 @@
 
 ---
 
+## v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
+
+### GUI 重设计
+- `gui_app.py` 界面版本号更新为 `v3.11`
+- 界面改为工作台布局：顶部品牌区、左侧任务配置、右侧运行状态与实时日志
+- 增加运行状态卡片：当前步骤、运行模式、处理结果
+- 实时日志支持颜色区分：成功、警告、失败、处理中信息更清晰
+- 左侧布局经过多轮调整，修复小窗口下文字重叠、按钮压住内容的问题
+
+### 无黑框与错误可见性
+- 新增 `SafeNullStream`，适配 PyInstaller `--windowed` 下 `sys.stdout/sys.stderr` 可能为 `None` 的情况
+- 新增 `GuiLogStream`，后台 `print()`、`stderr` 和异常 traceback 会转入 GUI 日志区
+- `_kill_excel_process()` 调用 `taskkill` 时使用 `CREATE_NO_WINDOW` 和 `STARTUPINFO` 隐藏子进程窗口
+- 推荐发布 exe 名称：`ExcelReportTool_v3.11_Windows_x64.exe`
+
+### 推荐打包命令
+```powershell
+python -m PyInstaller --onefile --clean --windowed `
+  --hidden-import win32timezone `
+  --hidden-import win32crypt `
+  --hidden-import pywinauto `
+  --hidden-import pywinauto.keyboard `
+  --hidden-import pywinauto.timings `
+  --hidden-import pywinauto.application `
+  --hidden-import pywinauto.findwindows `
+  --name "ExcelReportTool_v3.11_Windows_x64" gui_app.py
+```
+
+### 验证
+- `python -m py_compile gui_app.py report_maker.py utils.py` 通过
+- PyInstaller `--windowed` 导入模拟通过
+- `MainWindow` 实例化测试通过
+- `git diff --check` 通过
+
+---
+
 ## v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
 
 ### STEP4：Range 批量迁移
@@ -120,7 +156,7 @@ python -m PyInstaller --onefile --clean `
 
 ---
 
-## v3.10 (2026-04-30) - Office/WPS下拉框 
+## v3.10 (2026-04-30) - Office/WPS下拉框
 
 ### 新增功能
 - **Office/WPS下拉框**：gui_app.py参数区新增 `QComboBox`，运行时切换Excel类型
@@ -568,20 +604,20 @@ python run_queue.py --dry-run
 
 ## 📊 项目状态
 
-**当前版本**：**v3.10**（exe无终端 + Office/WPS下拉框）  
-**最后更新**：2026-06-27
-**维护者**：朱无理  
-**Python版本**：3.8+  
-**操作系统**：Windows 10/11  
-**依赖库**：openpyxl, pywin32, pywinauto, requests, PyQt5  
+**当前版本**：**v3.11**（GUI重设计 + 无黑框发布体验）
+**最后更新**：2026-07-03
+**维护者**：朱无理
+**Python版本**：3.8+
+**操作系统**：Windows 10/11
+**依赖库**：openpyxl, pywin32, pywinauto, requests, PyQt5
 
 ## 📁 当前文件结构
 
 ```
 F:\myproject\rpt-maker\
-├── report_maker.py          # 主程序 v3.10（含run_pipeline入口）
+├── report_maker.py          # 主程序 v3.11（含run_pipeline入口）
 ├── run_queue.py             # CLI批量调度器
-├── gui_app.py               # GUI打包入口 v3.10（PyQt5）          
+├── gui_app.py               # GUI打包入口 v3.11（PyQt5）
 ├── utils.py                 # 共享工具模块
 ├── dist\                    # exe打包输出目录
 │   └── ExcelReports_GUI_v3.9.exe   # 最终exe（64.4 MB）
@@ -592,4 +628,4 @@ F:\myproject\rpt-maker\
 └── PROJECT_LOG.txt         # 详细开发记录
 ```
 
-*文档最后更新：2026-06-27*
+*文档最后更新：2026-07-03*

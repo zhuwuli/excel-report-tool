@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║          Excel 汇总表自动处理工具 - 完整项目记录                              ║
-║                   2026-04-08 至 2026-06-27                                  ║
+║                   2026-04-08 至 2026-07-03                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -402,7 +402,7 @@
 
   项目历时：2026-04-08 至 2026-04-30（23天）
   核心成果：Excel汇总表自动处理工具 + 图形界面 + exe 打包
-  
+
   技术突破：
   - pywinauto + COM 混合方案解决 Step5 自动化
   - PyQt5 延迟导入解决 COM 冲突
@@ -852,3 +852,64 @@
     - CHANGELOG.md：补充环境修复、STEP4、STEP5 和验证记录
     - PROJECT_LOG.txt：补齐 2026-06-26 至 2026-06-27 的开发过程
     - 文档备份：.backup\20260627_095438
+══════════════════════════════════════════════════════════════════════════════
+『 2026-07-03 』v3.11 - GUI 重设计与无黑框发布体验
+══════════════════════════════════════════════════════════════════════════════
+
+  ■ 背景：
+    - v3.10 系列已完成鲁棒性、性能和安全停止优化
+    - 用户希望界面更像正式软件，而不只是脚本工具面板
+    - 使用 --windowed 打包后，需要解决黑框消失带来的 stdout/stderr 兼容问题
+
+  ■ GUI 重设计：
+    - gui_app.py 版本号更新为 v3.11
+    - 原单列 PyQt5 表单改为工作台式布局
+    - 顶部品牌区显示 Excel 报表工作台、版本徽标和运行状态
+    - 左侧集中放任务配置：工程目录、总期数、间隔天数、Excel 类型、任务摘要、开始/停止
+    - 右侧集中放运行概览：当前步骤、运行模式、处理结果、进度条、实时日志
+    - 多轮调整左侧布局，修复小窗口下文字重叠和按钮挤压问题
+
+  ■ 无黑框与错误显示：
+    - 新增 SafeNullStream：适配 PyInstaller --windowed 下 sys.stdout/sys.stderr 为 None 的情况
+    - 新增 GuiLogStream：后台 print、stderr 和 traceback 转发到 GUI 实时日志
+    - 后台线程捕获未处理异常，避免错误只出现在控制台或导致无提示闪退
+    - _kill_excel_process() 调用 taskkill 时隐藏子进程窗口，避免运行中闪出 taskkill 黑框
+
+  ■ 发布命名：
+    - 由于 GUI、无黑框体验和错误可见性均为明显用户体验升级，本次版本定为 v3.11
+    - 推荐 exe 名称：ExcelReportTool_v3.11_Windows_x64.exe
+    - 推荐 Release Tag：v3.11
+
+  ■ 推荐打包命令：
+    python -m PyInstaller --onefile --clean --windowed `
+      --hidden-import win32timezone `
+      --hidden-import win32crypt `
+      --hidden-import pywinauto `
+      --hidden-import pywinauto.keyboard `
+      --hidden-import pywinauto.timings `
+      --hidden-import pywinauto.application `
+      --hidden-import pywinauto.findwindows `
+      --name "ExcelReportTool_v3.11_Windows_x64" gui_app.py
+
+  ■ 备份：
+    - .backup\20260703_151023：GUI 日志重定向前备份
+    - .backup\20260703_152603：日志流 isatty 修复前备份
+    - .backup\20260703_154006：windowed stdout/stderr 兜底前备份
+    - .backup\20260703_155113：隐藏 taskkill 黑框前备份
+    - .backup\20260703_155735：UI 初步优化前备份
+    - .backup\20260703_160127：工作台布局重设计前备份
+    - .backup\20260703_160655：精致 UI 版本前备份
+    - .backup\20260703_161305：左侧重叠修复前备份
+    - .backup\20260703_162446：版本号改为 v3.11 前备份
+    - .backup\20260703_170713：文档同步前备份
+
+  ■ 验证：
+    - python -m py_compile gui_app.py report_maker.py utils.py 通过
+    - windowed 导入模拟通过
+    - MainWindow 实例化通过
+    - git diff --check 通过
+
+  ■ 说明：
+    - 本次没有改 Excel/WPS 自动化核心处理流程
+    - report_maker.py 仅调整 taskkill 子进程隐藏窗口参数
+    - 主要变化集中在 gui_app.py 和文档
