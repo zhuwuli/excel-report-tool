@@ -912,4 +912,54 @@
   ■ 说明：
     - 本次没有改 Excel/WPS 自动化核心处理流程
     - report_maker.py 仅调整 taskkill 子进程隐藏窗口参数
-    - 主要变化集中在 gui_app.py 和文档
+==============================================================================
+[2026-07-22] v3.11.3 - WPS PDF export guard and #### column-width fix
+==============================================================================
+
+  Background:
+    - Tested on 5 PCs: 2 Office PCs were normal; 2 of 3 WPS PCs produced extra PDF pages.
+    - Manual WPS export could be normal, which points to WPS COM PDF export pagination differences.
+    - Some cells appeared as #### in PDF because their displayed text overflowed column width.
+
+  Decision:
+    - Do not hard-code PDF page count.
+    - Do not compare against the previous PDF page count, because users may manually add sheets.
+    - Do not globally clear page breaks.
+    - Add pre-export guards instead: first fix #### display, then standardize WPS PageSetup.
+
+  #### handling:
+    - Added _is_hash_display(): true when cell.Text is at least 3 hash characters and all characters are '#'.
+    - Added _fix_hash_cells_before_pdf(): scans visible worksheets only, using UsedRange.
+    - Uses cell.Text, not cell.Value, because #### is a display result rather than real cell content.
+    - Does not change font size and does not use ShrinkToFit.
+    - Only widens the affected column.
+    - Each column can widen at most 3 times.
+    - Each step uses max(old_width + 2, old_width * 1.15).
+    - Maximum column width is capped at 30.
+    - If column width changed, wb.Save() persists the change into the generated Excel file.
+
+  WPS PDF PageSetup guard:
+    - Added _prepare_wps_pages_for_pdf_export().
+    - Enabled only when EXCEL_TYPE is wps; Office mode keeps existing behavior.
+    - Visible sheets: PaperSize = A4, Zoom = False, FitToPagesWide = 1.
+    - One-page sheets use FitToPagesTall = 1.
+    - Data sheets keep natural vertical pagination.
+
+  Build records:
+    - Morning test build: ExcelReportTool_v3.11.1_Windows_x64
+    - Morning test build: ExcelReportTool_v3.11.2_Windows_x64
+    - Current recommended build: ExcelReportTool_v3.11.3_Windows_x64
+
+  Backups:
+    - .backup\20260722_103734: before first PDF export guard
+    - .backup\20260722_125556: before removing ShrinkToFit
+    - .backup\20260722_125908: before adding 3-attempt width retry
+    - .backup\20260722_130201: before changing width cap to 30
+    - .backup\20260722_133145: before detailed logs and wb.Save()
+    - .backup\20260722_135037: before documentation sync
+
+  Verification:
+    - python -m py_compile report_maker.py gui_app.py utils.py passed.
+    - #### display detection tests passed.
+    - Mock COM tests passed.
+    - git diff --check passed.

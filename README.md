@@ -1,4 +1,4 @@
-# Excel汇总表自动处理工具 v3.11
+# Excel汇总表自动处理工具 v3.11.3
 
 > 自动把工程监测数据做成 PDF 报表，六步流程一键完成。
 
@@ -8,7 +8,7 @@
 
 ### 双击 exe 运行（最简单）
 
-1. 双击 `dist\ExcelReportTool_v3.11_Windows_x64.exe`
+1. 双击 `dist\ExcelReportTool_v3.11.3_Windows_x64.exe`
 2. 选择 Excel 类型（Microsoft Office 或 WPS Office）
 3. 点击"选择文件夹"，找到工程文件夹
 4. 填总期数和各期间隔天数
@@ -46,7 +46,7 @@
 **方式一：直接双击 exe（最简单，推荐）**
 
 1. 进入 `dist\` 文件夹
-2. 双击 `ExcelReportTool_v3.11_Windows_x64.exe`
+2. 双击 `ExcelReportTool_v3.11.3_Windows_x64.exe`
 3. 弹出图形界面
 4. 选择 Excel 类型
 5. 点击"选择文件夹" → 找到工程文件夹
@@ -103,7 +103,7 @@ rpt-maker\
 ├── gui_app.py            # GUI打包入口（PyQt5）
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
-│   └── ExcelReportTool_v3.11_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
+│   └── ExcelReportTool_v3.11.3_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
@@ -118,7 +118,7 @@ rpt-maker\
 **你只需要关心 3 个地方：**
 1. **`queue\` 文件夹** - 放要处理的工程
 2. **`queue\done\` 文件夹** - 处理完的工程在这儿
-3. **`dist\ExcelReportTool_v3.11_Windows_x64.exe`** - 双击运行（无黑框GUI）
+3. **`dist\ExcelReportTool_v3.11.3_Windows_x64.exe`** - 双击运行（无黑框GUI）
 
 ---
 
@@ -378,7 +378,7 @@ python -m PyInstaller --onefile --clean `
   --hidden-import pywinauto.timings `
   --hidden-import pywinauto.application `
   --hidden-import pywinauto.findwindows `
-  --name "ExcelReportTool_v3.11_Windows_x64" gui_app.py
+  --name "ExcelReportTool_v3.11.3_Windows_x64" gui_app.py
 ```
 
 不要在当前环境使用 `--collect-all pywinauto`。如果打包日志显示 `Python environment: F:\anaconda`，说明实际调用了 Anaconda 的 PyInstaller，可能把 pandas、scipy、sklearn、Jupyter 等无关依赖一起收集，导致 exe 从约 66 MB 增长到数百 MB。
@@ -516,9 +516,22 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
+### v3.11.3 (2026-07-22) - WPS PDF export guard and #### column-width fix
+- Added WPS-only PDF PageSetup guard before `ExportAsFixedFormat()`.
+- WPS visible sheets now use A4, `Zoom = False`, and `FitToPagesWide = 1` before PDF export.
+- Fixed one-page sheets in WPS mode use `FitToPagesTall = 1`.
+- Data sheets keep natural vertical pagination, so manually added sheets or longer data can still produce more pages.
+- Added pre-PDF `####` detection using COM `cell.Text`, not cell value search.
+- `####` fix only changes column width. It does not change font size and does not use `ShrinkToFit`.
+- Each affected column can widen up to 3 times. Each step uses the larger of `+2` or `*1.15`, capped at column width 30.
+- Column-width changes are now saved back into the generated Excel workbook with `wb.Save()`.
+- Logs now show found/resolved/unresolved counts, sheet/column, width changes, attempt count, and save status.
+- Morning test builds: `ExcelReportTool_v3.11.1_Windows_x64`, `ExcelReportTool_v3.11.2_Windows_x64`.
+- Current recommended build: `ExcelReportTool_v3.11.3_Windows_x64`.
+
 ### v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
 - GUI 从原单列表单改为“工作台”布局：顶部品牌区、左侧任务配置、右侧运行状态与实时日志
-- 界面版本号更新为 `v3.11`，推荐 exe 名称更新为 `ExcelReportTool_v3.11_Windows_x64.exe`
+- 界面版本号更新为 `v3.11`，推荐 exe 名称更新为 `ExcelReportTool_v3.11.3_Windows_x64.exe`
 - `--windowed` 打包适配：`sys.stdout/sys.stderr` 为 `None` 时自动兜底，避免无控制台环境闪退
 - 后台 `print()`、`stderr` 和异常 traceback 会转入 GUI 日志区，错误不再只出现在黑框
 - `_kill_excel_process()` 调用 `taskkill` 时隐藏子进程窗口，避免运行中闪出 `taskkill` 黑框
@@ -871,17 +884,17 @@ F:\myproject\rpt-maker\.logs\
 
 | 项目 | 内容 |
 |------|------|
-| 当前版本 | **v3.11** |
-| 最后更新 | 2026-07-03 |
+| 当前版本 | **v3.11.3** |
+| 最后更新 | 2026-07-22 |
 | 维护者 | 朱无理 |
-| 项目历时 | 2026-04-08 至 2026-07-03 |
+| 项目历时 | 2026-04-08 至 2026-07-22 |
 | Python版本 | 3.8+ |
 | 操作系统 | Windows 10/11 |
 | 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz |
 
 ---
 
-*最后更新：2026-07-03*
-*版本：v3.11*
+*最后更新：2026-07-22*
+*版本：v3.11.3*
 
 </details>

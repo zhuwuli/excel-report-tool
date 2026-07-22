@@ -4,6 +4,42 @@
 
 ---
 
+## v3.11.3 (2026-07-22) - WPS PDF export guard and #### column-width fix
+
+### Background
+- Tested on 5 PCs: 2 Office PCs were normal; 2 of 3 WPS PCs produced extra PDF pages during automated export.
+- Manual WPS PDF export could still be normal, so the main risk is WPS COM `ExportAsFixedFormat()` pagination.
+- Some cells could also appear as `####` in the exported PDF when their displayed text overflowed the current column width.
+
+### PDF Export Guard
+- Added `_fix_hash_cells_before_pdf()` before PDF export.
+- Detects `####` by reading COM `cell.Text`, not by searching `cell.Value`.
+- Does not change font size and does not use `ShrinkToFit`.
+- Only widens affected columns, up to 3 attempts per column.
+- Each widening step uses `max(old_width + 2, old_width * 1.15)`, capped at width 30.
+- If any column width changes, the generated Excel workbook is saved with `wb.Save()`.
+
+### WPS Pagination Guard
+- Added `_prepare_wps_pages_for_pdf_export()`, enabled only in WPS mode.
+- Office mode keeps the previous pagination behavior.
+- WPS visible sheets use A4, `Zoom = False`, and `FitToPagesWide = 1`.
+- Fixed one-page sheets use `FitToPagesTall = 1`; data sheets keep natural vertical pagination.
+- Does not hard-code expected PDF page count, compare with previous PDFs, or globally clear page breaks.
+
+### Logs and Builds
+- Logs now include `found / resolved / unresolved` for `####` cells.
+- Logs include sheet/column, width before/after, attempts, affected cell count, unresolved count, and save status.
+- Morning test builds: `ExcelReportTool_v3.11.1_Windows_x64`, `ExcelReportTool_v3.11.2_Windows_x64`.
+- Current recommended build: `ExcelReportTool_v3.11.3_Windows_x64`.
+
+### Verification
+- `python -m py_compile report_maker.py gui_app.py utils.py` passed.
+- `_is_hash_display()` checks passed.
+- Mock COM tests passed for visible-sheet filtering, hidden-sheet skipping, width cap 30, and WPS PageSetup behavior.
+- Real Excel/WPS batch export was not run automatically to avoid closing active user workbooks.
+
+---
+
 ## v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
 
 ### GUI 重设计
@@ -17,7 +53,7 @@
 - 新增 `SafeNullStream`，适配 PyInstaller `--windowed` 下 `sys.stdout/sys.stderr` 可能为 `None` 的情况
 - 新增 `GuiLogStream`，后台 `print()`、`stderr` 和异常 traceback 会转入 GUI 日志区
 - `_kill_excel_process()` 调用 `taskkill` 时使用 `CREATE_NO_WINDOW` 和 `STARTUPINFO` 隐藏子进程窗口
-- 推荐发布 exe 名称：`ExcelReportTool_v3.11_Windows_x64.exe`
+- 推荐发布 exe 名称：`ExcelReportTool_v3.11.3_Windows_x64.exe`
 
 ### 推荐打包命令
 ```powershell
@@ -29,7 +65,7 @@ python -m PyInstaller --onefile --clean --windowed `
   --hidden-import pywinauto.timings `
   --hidden-import pywinauto.application `
   --hidden-import pywinauto.findwindows `
-  --name "ExcelReportTool_v3.11_Windows_x64" gui_app.py
+  --name "ExcelReportTool_v3.11.3_Windows_x64" gui_app.py
 ```
 
 ### 验证
@@ -604,8 +640,8 @@ python run_queue.py --dry-run
 
 ## 📊 项目状态
 
-**当前版本**：**v3.11**（GUI重设计 + 无黑框发布体验）
-**最后更新**：2026-07-03
+**当前版本**：**v3.11.3**（WPS PDF export guard + #### column-width fix）
+**最后更新**：2026-07-22
 **维护者**：朱无理
 **Python版本**：3.8+
 **操作系统**：Windows 10/11
@@ -628,4 +664,4 @@ F:\myproject\rpt-maker\
 └── PROJECT_LOG.txt         # 详细开发记录
 ```
 
-*文档最后更新：2026-07-03*
+*文档最后更新：2026-07-22*

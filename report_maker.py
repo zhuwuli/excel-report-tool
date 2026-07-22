@@ -906,6 +906,141 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
         _kill_excel_process()
 
 # ============ Excel转PDF ============
+
+PDF_ONE_PAGE_SHEETS = {"\u5c01\u97621", "\u5c01\u97622", "\u5de1\u89c6\u8bb0\u5f55\u8868", "\u603b\u8ff0", "\u5e03\u70b9\u56fe"}
+XL_SHEET_VISIBLE = -1
+XL_PAPER_A4 = 9
+
+
+def _is_hash_display(text):
+    """Return True when Excel/WPS displays a cell as #### because it overflows."""
+    text = str(text).strip()
+    return len(text) >= 3 and all(ch == "#" for ch in text)
+
+
+def _iter_visible_sheets(wb):
+    """Iterate visible worksheets by index for COM compatibility."""
+    for i in range(1, wb.Worksheets.Count + 1):
+        ws = wb.Worksheets(i)
+        if ws.Visible == XL_SHEET_VISIBLE:
+            yield ws
+
+
+def _fix_hash_cells_before_pdf(wb, cancel_check=None):
+    """Before PDF export, widen columns for cells currently displayed as ####."""
+    found_count = 0
+    resolved_count = 0
+    unresolved_count = 0
+    changed_columns = {}
+
+    for ws in _iter_visible_sheets(wb):
+        check_cancelled(cancel_check)
+        try:
+            ws.Activate()
+            used = ws.UsedRange
+            rows = used.Rows.Count
+            cols = used.Columns.Count
+        except Exception as e:
+            print(f"   [skip] hash display check skipped: {getattr(ws, 'Name', '?')} ({e})")
+            continue
+
+        for r in range(1, rows + 1):
+            check_cancelled(cancel_check)
+            for c in range(1, cols + 1):
+                try:
+                    cell = used.Cells(r, c)
+                    if not _is_hash_display(cell.Text):
+                        continue
+
+                    found_count += 1
+                    col = cell.Column
+                    key = (ws.Name, col)
+                    column = ws.Columns(col)
+                    original_width = float(column.ColumnWidth)
+                    attempts = 0
+
+                    while _is_hash_display(cell.Text) and attempts < 3:
+                        old_width = float(column.ColumnWidth)
+                        if old_width >= 30:
+                            break
+                        new_width = min(max(old_width + 2, old_width * 1.15), 30)
+                        if new_width <= old_width:
+                            break
+                        column.ColumnWidth = new_width
+                        attempts += 1
+
+                    final_width = float(column.ColumnWidth)
+                    if final_width > original_width:
+                        stats = changed_columns.setdefault(key, {
+                            "sheet": ws.Name,
+                            "col": col,
+                            "from": original_width,
+                            "to": final_width,
+                            "attempts": attempts,
+                            "cells": 0,
+                            "unresolved": 0,
+                        })
+                        stats["to"] = final_width
+                        stats["attempts"] = max(stats["attempts"], attempts)
+                        stats["cells"] += 1
+
+                    if _is_hash_display(cell.Text):
+                        unresolved_count += 1
+                        if key in changed_columns:
+                            changed_columns[key]["unresolved"] += 1
+                    else:
+                        resolved_count += 1
+                except Exception:
+                    continue
+
+    if found_count:
+        print(
+            "   [fix] #### cells found: "
+            f"{found_count}, resolved: {resolved_count}, unresolved: {unresolved_count}"
+        )
+        for item in changed_columns.values():
+            print(
+                "   [fix] column width: "
+                f"{item['sheet']}!C{item['col']} "
+                f"{item['from']:.2f} -> {item['to']:.2f} "
+                f"({item['attempts']} attempts, cells={item['cells']}, "
+                f"unresolved={item['unresolved']})"
+            )
+        if unresolved_count:
+            print("   [warn] Some #### cells remain after widening columns, max width is 30")
+
+    return bool(changed_columns), {
+        "found": found_count,
+        "resolved": resolved_count,
+        "unresolved": unresolved_count,
+        "columns": len(changed_columns),
+    }
+
+def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
+    """Standardize visible sheet PageSetup before WPS PDF export."""
+    if EXCEL_TYPE.lower() != "wps":
+        return
+
+    prepared = 0
+    for ws in _iter_visible_sheets(wb):
+        check_cancelled(cancel_check)
+        try:
+            name = str(ws.Name).strip()
+            ps = ws.PageSetup
+            ps.PaperSize = XL_PAPER_A4
+            ps.Zoom = False
+            ps.FitToPagesWide = 1
+            if name in PDF_ONE_PAGE_SHEETS:
+                ps.FitToPagesTall = 1
+            else:
+                ps.FitToPagesTall = False
+            prepared += 1
+        except Exception as e:
+            print(f"   [skip] WPS page setup skipped: {getattr(ws, 'Name', '?')} ({e})")
+
+    if prepared:
+        print(f"   [setup] WPS PDF page setup standardized: {prepared} visible sheets")
+
 def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_check=None):
     """使用Excel COM接口将Excel转换为PDF，保持所有格式。失败自动重试最多3次。"""
     if not os.path.exists(excel_path):
@@ -940,6 +1075,18 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
             wb = excel.Workbooks.Open(excel_path)
             sheet_count = wb.Worksheets.Count
             print(f"   发现 {sheet_count} 个工作表")
+
+            check_cancelled(cancel_check)
+            hash_width_changed, hash_stats = _fix_hash_cells_before_pdf(wb, cancel_check=cancel_check)
+            _prepare_wps_pages_for_pdf_export(wb, cancel_check=cancel_check)
+
+            if hash_width_changed:
+                check_cancelled(cancel_check)
+                wb.Save()
+                print(
+                    "   [save] Excel saved after #### column width fixes "
+                    f"({hash_stats['columns']} columns changed)"
+                )
 
             check_cancelled(cancel_check)
             wb.ExportAsFixedFormat(0, pdf_path)  # 0 = xlTypePDF
