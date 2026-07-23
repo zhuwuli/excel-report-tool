@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║          Excel 汇总表自动处理工具 - 完整项目记录                              ║
-║                   2026-04-08 至 2026-07-03                                  ║
+║                   2026-04-08 至 2026-07-23                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -17,17 +17,17 @@
 
 ■ 文件对应关系（历史沿革）
   test.py              → report_maker.single.py   （单期版，最原始版本）
-  run_all.py           → report_maker.manual.py    （批量版，step5 需手动）
-  run_all1.py          → report_maker.py           （当前在用，step5 全自动）
+  run_all.py           → report_maker.manual.py    （批量版，步骤 5 需手动）
+  run_all1.py          → report_maker.py           （当前在用，步骤 5 全自动）
   run_all1_backup.py   → report_maker.backup.py    （备份）
 
 ■ 六步主流程
-  Step 1  复制目录（期数+1，日期+自定义天数）
-  Step 2  删除目录下所有 PDF 文件
-  Step 3  修改 Excel 封面（期数、天气）
-  Step 4  处理 Excel 日期列（全部用COM完成，触发RANDBETWEEN重算）
-  Step 5  自动处理外部引用（pywinauto + COM混合方案）
-  Step 6  Excel 转 PDF（COM 接口 ExportAsFixedFormat）
+  步骤 1  复制目录（期数+1，日期+自定义天数）
+  步骤 2  删除目录下所有 PDF 文件
+  步骤 3  修改 Excel 封面（期数、天气）
+  步骤 4  处理 Excel 日期列（全部用COM完成，触发RANDBETWEEN重算）
+  步骤 5  自动处理外部引用（pywinauto + COM混合方案）
+  步骤 6  Excel 转 PDF（COM 接口 ExportAsFixedFormat）
 
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -67,7 +67,7 @@
     - xlwings 和 openpyxl 混用容易导致 COM 冲突
     - 天气和温度可能位于不同单元格，需要分别定位
     - 日期格存在两种表示方式，需要统一判断
-    - 开始研究 Step5 外部链接更新自动化方案
+    - 开始研究 步骤 5 外部链接更新自动化方案
 
 
 【2026-04-14】v3.0 - 批量处理框架完成
@@ -80,14 +80,14 @@
     5. 自动处理外部引用（注册表 + 自动点击更新）
     6. Excel 转 PDF（COM 接口）
 
-  ■ Step5 自动化探索：
+  ■ 步骤 5 自动化探索：
     - 7 个纯 COM 方案全部失败
     - 失败现象包括 crash、变量未更新、COM 单例导致第二批 Open 方法无效
     - 初步定位根因：Windows COM 单例机制，Dispatch() 容易返回已损坏的残存实例
     - 开始转向 pywinauto + COM 混合方案
 
 
-【2026-04-15】v3.1 - Step5 全自动化 + 代码优化
+【2026-04-15】v3.1 - 步骤 5 全自动化 + 代码优化
 
   ■ 核心突破：
     - pywinauto + COM 混合方案成功
@@ -146,7 +146,7 @@
     - 失败记录持久化：失败加入 failed_projects.txt，成功后自动移除
 
   ■ report_maker.py 健壮性增强：
-    - Step5 文件级重试：每个 Excel 文件最多重试 3 次
+    - 步骤 5 文件级重试：每个 Excel 文件最多重试 3 次
     - PDF 转换重试：失败后自动重试
     - 指数退避：1s / 2s / 4s
     - 子进程环境变量增加 PYTHONIOENCODING=utf-8 / PYTHONUTF8=1，缓解乱码问题
@@ -223,7 +223,7 @@
 
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-04-28 』第二十天 - Step4 全部改用 COM，解决 I 列超范围问题
+『 2026-04-28 』第二十天 - 步骤 4 全部改用 COM，解决 I 列超范围问题
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 问题分析：
@@ -238,7 +238,7 @@
     - openpyxl 写入的是 F 列的旧缓存值
 
   ■ 解决方案：
-    - Step4 全部改用 COM 完成（模拟手工操作）
+    - 步骤 4 全部改用 COM 完成（模拟手工操作）
     - 封面修改和日期列处理一次完成
     - D=E 操作在 COM 里执行，触发 F 列重新计算
     - 读取 F 最新值写入 E
@@ -404,7 +404,7 @@
   核心成果：Excel汇总表自动处理工具 + 图形界面 + exe 打包
 
   技术突破：
-  - pywinauto + COM 混合方案解决 Step5 自动化
+  - pywinauto + COM 混合方案解决 步骤 5 自动化
   - PyQt5 延迟导入解决 COM 冲突
   - COM 实时计算解决 RANDBETWEEN 缓存问题
 
@@ -600,7 +600,7 @@
   - 开源发布（GitHub）
 
   技术突破：
-  - pywinauto + COM 混合方案解决 Step5 自动化
+  - pywinauto + COM 混合方案解决 步骤 5 自动化
   - PyQt5 延迟导入解决 COM 冲突
   - COM 实时计算解决 RANDBETWEEN 缓存问题
   - 三重天气 API 策略
@@ -620,7 +620,7 @@
   - 简历里加入项目
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-02 』v3.10 Hotfix - 过滤 WPS/Excel 临时锁文件
+『 2026-06-02 』v3.10 热修复 - 过滤 WPS/Excel 临时锁文件
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 问题发现：
@@ -641,7 +641,7 @@
 
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-02 』v3.10 Hotfix - GUI 安全停止优化
+『 2026-06-02 』v3.10 热修复 - GUI 安全停止优化
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 问题发现：
@@ -682,7 +682,7 @@
 
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-02 』v3.10 Hotfix - run_queue.py 路径自动化
+『 2026-06-02 』v3.10 热修复 - run_queue.py 路径自动化
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 问题发现：
@@ -717,7 +717,7 @@
     - 运行前仍需确保当前 Python 已安装 openpyxl、pywin32、pywinauto、requests、PyQt5 等依赖
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-26 』v3.10 Hotfix - 鲁棒性增强
+『 2026-06-26 』v3.10 热修复 - 鲁棒性增强
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 优化背景：
@@ -763,8 +763,8 @@
 
   ■ 修改文件：
     - report_maker.py：新增进程清理、临时文件过滤、运行前自检逻辑
-    - README.md：新增 Q7 自检失败说明，版本历史加入 2026-06-26 Hotfix
-    - CHANGELOG.md：顶部新增 2026-06-26 Hotfix 记录
+    - README.md：新增 Q7 自检失败说明，版本历史加入 2026-06-26 热修复
+    - CHANGELOG.md：顶部新增 2026-06-26 热修复 记录
     - PROJECT_LOG.txt：追加本次开发记录
 
   ■ 备份文件：
@@ -785,7 +785,7 @@
     - 如果源目录已有残留 ~$ 文件，自检会提醒，但不会中断处理
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-26 』v3.10 Hotfix - 开发环境、打包与 STEP4 性能优化
+『 2026-06-26 』v3.10 热修复 - 开发环境、打包与 步骤 4 性能优化
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 虚拟环境排查与修复：
@@ -806,20 +806,20 @@
     - 使用 python -m PyInstaller，避免命中 PATH 中的 Anaconda 可执行文件
     - 不再使用 --collect-all pywinauto，仅添加实际需要的隐藏导入
 
-  ■ STEP4 Range 批量迁移优化：
+  ■ 步骤 4 Range 批量迁移优化：
     - 原逻辑逐单元格 COM 读写，数据行较多时跨进程调用次数很高
     - 第2列→第1列改为整段 Range.Value 批量读取和写入
     - 第3列→第2列改为批量读取、内存合并后一次写入
     - 保留原逻辑：第3列为空时，不覆盖第2列已有值
     - 新增 _range_to_column_values() 和 _column_values_to_range()
 
-  ■ STEP4 备份与验证：
+  ■ 步骤 4 备份与验证：
     - 备份：.backup\20260626_164422\report_maker.before-step4-range.py
     - 语法检查、Range 数据形状转换和空值不覆盖测试通过
     - 未运行真实 Excel COM 自动测试，避免影响用户工作簿
 
 ══════════════════════════════════════════════════════════════════════════════
-『 2026-06-27 』v3.10 Hotfix - STEP5 智能等待优化
+『 2026-06-27 』v3.10 热修复 - 步骤 5 智能等待优化
 ══════════════════════════════════════════════════════════════════════════════
 
   ■ 原等待逻辑与问题：
@@ -849,7 +849,7 @@
 
   ■ 文档同步：
     - README.md：更新卡顿说明、开发环境、打包命令、版本历史和日期
-    - CHANGELOG.md：补充环境修复、STEP4、STEP5 和验证记录
+    - CHANGELOG.md：补充环境修复、步骤 4、步骤 5 和验证记录
     - PROJECT_LOG.txt：补齐 2026-06-26 至 2026-06-27 的开发过程
     - 文档备份：.backup\20260627_095438
 ══════════════════════════════════════════════════════════════════════════════
@@ -913,53 +913,103 @@
     - 本次没有改 Excel/WPS 自动化核心处理流程
     - report_maker.py 仅调整 taskkill 子进程隐藏窗口参数
 ==============================================================================
-[2026-07-22] v3.11.3 - WPS PDF export guard and #### column-width fix
+[2026-07-22] v3.11.3 - WPS PDF 导出保护与 #### 列宽修复
 ==============================================================================
 
-  Background:
-    - Tested on 5 PCs: 2 Office PCs were normal; 2 of 3 WPS PCs produced extra PDF pages.
-    - Manual WPS export could be normal, which points to WPS COM PDF export pagination differences.
-    - Some cells appeared as #### in PDF because their displayed text overflowed column width.
+  问题背景：
+    - 共在 5 台电脑上测试：2 台 Office 电脑均正常，3 台 WPS 电脑中有 2 台生成了额外的 PDF 页面。
+    - WPS 手工导出可能正常，说明问题来自 WPS COM 导出 PDF 时的分页差异。
+    - 某些单元格的显示内容超出列宽时，PDF 中会出现 ####。
 
-  Decision:
-    - Do not hard-code PDF page count.
-    - Do not compare against the previous PDF page count, because users may manually add sheets.
-    - Do not globally clear page breaks.
-    - Add pre-export guards instead: first fix #### display, then standardize WPS PageSetup.
+  方案决定：
+    - 不写死 PDF 页数。
+    - 不与上一期 PDF 页数比较，因为用户可能手工新增工作表。
+    - 不全局清除分页符。
+    - 改为增加导出前保护：先修复 #### 显示，再规范 WPS 页面设置。
 
-  #### handling:
-    - Added _is_hash_display(): true when cell.Text is at least 3 hash characters and all characters are '#'.
-    - Added _fix_hash_cells_before_pdf(): scans visible worksheets only, using UsedRange.
-    - Uses cell.Text, not cell.Value, because #### is a display result rather than real cell content.
-    - Does not change font size and does not use ShrinkToFit.
-    - Only widens the affected column.
-    - Each column can widen at most 3 times.
-    - Each step uses max(old_width + 2, old_width * 1.15).
-    - Maximum column width is capped at 30.
-    - If column width changed, wb.Save() persists the change into the generated Excel file.
+  #### 处理：
+    - 新增 _is_hash_display()：当 cell.Text 至少包含 3 个井号且所有字符均为“#”时判定为真。
+    - 新增 _fix_hash_cells_before_pdf()：使用 UsedRange，仅扫描可见工作表。
+    - 使用 cell.Text 而不是 cell.Value，因为 #### 是显示结果，不是单元格的真实内容。
+    - 不修改字体大小，也不使用 ShrinkToFit。
+    - 只拓宽受影响的列。
+    - 每列最多拓宽 3 次。
+    - 每次使用 max(old_width + 2, old_width * 1.15) 计算新列宽。
+    - 最大列宽限制为 30。
+    - 列宽发生变化后，通过 wb.Save() 将修改保存到生成的 Excel 文件。
 
-  WPS PDF PageSetup guard:
-    - Added _prepare_wps_pages_for_pdf_export().
-    - Enabled only when EXCEL_TYPE is wps; Office mode keeps existing behavior.
-    - Visible sheets: PaperSize = A4, Zoom = False, FitToPagesWide = 1.
-    - One-page sheets use FitToPagesTall = 1.
-    - Data sheets keep natural vertical pagination.
+  WPS PDF 页面设置保护：
+    - 新增 _prepare_wps_pages_for_pdf_export()。
+    - 仅在 EXCEL_TYPE 为 wps 时启用；Office 模式保留原有行为。
+    - 可见工作表使用 PaperSize = A4、Zoom = False、FitToPagesWide = 1。
+    - 单页工作表使用 FitToPagesTall = 1。
+    - 数据工作表保留自然的纵向分页。
 
-  Build records:
-    - Morning test build: ExcelReportTool_v3.11.1_Windows_x64
-    - Morning test build: ExcelReportTool_v3.11.2_Windows_x64
-    - Current recommended build: ExcelReportTool_v3.11.3_Windows_x64
+  构建记录：
+    - 上午测试版本：ExcelReportTool_v3.11.1_Windows_x64
+    - 上午测试版本：ExcelReportTool_v3.11.2_Windows_x64
+    - 当时推荐版本：ExcelReportTool_v3.11.3_Windows_x64
 
-  Backups:
-    - .backup\20260722_103734: before first PDF export guard
-    - .backup\20260722_125556: before removing ShrinkToFit
-    - .backup\20260722_125908: before adding 3-attempt width retry
-    - .backup\20260722_130201: before changing width cap to 30
-    - .backup\20260722_133145: before detailed logs and wb.Save()
-    - .backup\20260722_135037: before documentation sync
+  备份记录：
+    - .backup\20260722_103734：首次增加 PDF 导出保护前
+    - .backup\20260722_125556：移除 ShrinkToFit 前
+    - .backup\20260722_125908：增加 3 次列宽重试前
+    - .backup\20260722_130201：将最大列宽改为 30 前
+    - .backup\20260722_133145：增加详细日志和 wb.Save() 前
+    - .backup\20260722_135037：同步文档前
 
-  Verification:
-    - python -m py_compile report_maker.py gui_app.py utils.py passed.
-    - #### display detection tests passed.
-    - Mock COM tests passed.
-    - git diff --check passed.
+  验证结果：
+    - python -m py_compile report_maker.py gui_app.py utils.py 检查通过。
+    - #### 显示检测测试通过。
+    - 模拟 COM 测试通过。
+    - git diff --check 通过。
+==============================================================================[2026-07-23] v3.11.4 - WPS 签字备注尾部纵向跨页修复
+==============================================================================
+
+  问题分析：
+    - 第95期.pdf 在 WPS 自动导出后增加到 17 页。
+    - 多出的 3 页只包含工作表底部的签字和备注内容。
+    - Office 导出保持正常。
+
+  实现内容：
+    - 新增 _fix_wps_footer_only_overflow()。
+    - 仅在 WPS 模式下检测：一个自动分页符、尾部不超过 8 行、尾部高度不超过 20%，并且至少命中两个尾部关键词。
+    - 只对发生问题的工作表设置 FitToPagesTall = 1。
+    - 手工分页、正常多页和 Office 模式保持原样。
+
+  备份：
+    - .backup\20260723_091537\report_maker.before-wps-tail-overflow-fix.py
+
+  验证：
+    - Python 语法检查通过。
+    - 尾部跨页、手工分页、正常多页、无关键词和 Office 旁路模拟测试通过。
+
+==============================================================================
+[2026-07-23] v3.11.5 - WPS 手工分页与单行夹心页修复
+==============================================================================
+
+  问题分析：
+    - 第89期.pdf 生成 13 页，第88期.pdf 为 12 页。
+    - 多出的页面只包含测斜工作表中 CX2 的 12.0 m 一行数据。
+    - 两个工作簿的打印区域、重复标题行、56% 缩放比例、行高、列宽和手工分页符完全一致。
+    - WPS 在模板手工分页符旁边增加了自动分页符，产生单行夹心页。
+
+  实现内容：
+    - 带手工分页符的工作表保留模板固定缩放比例。
+    - 相邻分页符之间只有 1～2 行，且至少一个边界是手工分页符时，判定为夹心页。
+    - 每次降低 1%，最多尝试 3 次；仍未解决时恢复原缩放比例。
+    - WPS 分页符接口不可用时，退回原有一页宽逻辑。
+    - #### 列宽修改先保存，临时 PDF 分页参数不保存进 Excel。
+
+  发布：
+    - 推荐发布名称：ExcelReportTool_v3.11.5_Windows_x64
+
+  备份：
+    - .backup\20260723_101954\report_maker.before-wps-orphan-page-fix.py
+    - .backup\20260723_111244：v3.11.5 文档首次同步前备份
+    - .backup\20260723_112334：v3.11.4/v3.11.5 中文化前备份
+
+  验证：
+    - Python 语法检查通过。
+    - 夹心页修复、正常多页保留、失败恢复、Office 旁路、旧版 WPS 回退和保存顺序测试通过。
+    - 用户在 WPS 环境测试后反馈暂未发现问题。

@@ -910,6 +910,20 @@ def process_excel(filepath, target_date, issue_num, weather, days=1, cancel_chec
 PDF_ONE_PAGE_SHEETS = {"\u5c01\u97621", "\u5c01\u97622", "\u5de1\u89c6\u8bb0\u5f55\u8868", "\u603b\u8ff0", "\u5e03\u70b9\u56fe"}
 XL_SHEET_VISIBLE = -1
 XL_PAPER_A4 = 9
+XL_PAGE_BREAK_MANUAL = -4135
+WPS_TAIL_OVERFLOW_MAX_ROWS = 8
+WPS_TAIL_OVERFLOW_MAX_HEIGHT_RATIO = 0.20
+WPS_ORPHAN_PAGE_MAX_ROWS = 2
+WPS_ORPHAN_ZOOM_MAX_REDUCTION = 3
+WPS_TAIL_MARKERS = (
+    "\u65bd\u5de5\u5de5\u51b5",
+    "\u73b0\u573a\u76d1\u6d4b\u4eba",
+    "\u8ba1\u7b97\u4eba",
+    "\u6821\u6838\u4eba",
+    "\u76d1\u6d4b\u5de5\u7a0b\u8d1f\u8d23\u4eba",
+    "\u76d1\u6d4b\u5355\u4f4d",
+    "\u5907\u6ce8",
+)
 
 
 def _is_hash_display(text):
@@ -1016,30 +1030,309 @@ def _fix_hash_cells_before_pdf(wb, cancel_check=None):
         "columns": len(changed_columns),
     }
 
+def _get_print_range(ws):
+    """Return the configured print range, falling back to UsedRange."""
+    try:
+        print_area = str(ws.PageSetup.PrintArea or "").strip()
+        if print_area:
+            return ws.Range(print_area)
+    except Exception:
+        pass
+    return ws.UsedRange
+
+
+def _get_row_height(ws, row_number):
+    """Read one row height without treating mixed-height ranges as zero."""
+    row = ws.Rows(row_number)
+    try:
+        if bool(row.Hidden):
+            return 0.0
+    except Exception:
+        pass
+
+    try:
+        height = row.RowHeight
+        if height is not None:
+            return float(height)
+    except Exception:
+        pass
+
+    try:
+        return float(ws.StandardHeight)
+    except Exception:
+        return 15.0
+
+
+def _flatten_com_values(value):
+    """Yield scalar values from a COM Range.Value/Value2 result."""
+    if isinstance(value, (tuple, list)):
+        for item in value:
+            yield from _flatten_com_values(item)
+    else:
+        yield value
+
+
+def _read_wps_horizontal_page_breaks(ws):
+    """Return horizontal page breaks as row/type records after layout refresh."""
+    ws.Activate()
+    try:
+        ws.DisplayPageBreaks = False
+        ws.DisplayPageBreaks = True
+    except Exception:
+        pass
+
+    records = []
+    breaks = ws.HPageBreaks
+    for index in range(1, int(breaks.Count) + 1):
+        page_break = breaks.Item(index)
+        try:
+            break_type = int(page_break.Type)
+        except Exception:
+            break_type = None
+        records.append({
+            "row": int(page_break.Location.Row),
+            "type": break_type,
+        })
+    records.sort(key=lambda item: item["row"])
+    return records
+
+
+def _find_wps_orphan_middle_page(ws, page_breaks):
+    """Find a 1-2 row page sandwiched between horizontal page breaks."""
+    print_range = _get_print_range(ws)
+    first_row = int(print_range.Row)
+    last_row = first_row + int(print_range.Rows.Count) - 1
+    active_breaks = [
+        item for item in page_breaks
+        if first_row < item["row"] <= last_row
+    ]
+
+    for current_break, next_break in zip(active_breaks, active_breaks[1:]):
+        page_rows = next_break["row"] - current_break["row"]
+        has_manual_boundary = (
+            current_break["type"] == XL_PAGE_BREAK_MANUAL
+            or next_break["type"] == XL_PAGE_BREAK_MANUAL
+        )
+        if 0 < page_rows <= WPS_ORPHAN_PAGE_MAX_ROWS and has_manual_boundary:
+            return {
+                "first_row": current_break["row"],
+                "last_row": next_break["row"] - 1,
+                "rows": page_rows,
+            }
+    return None
+
+
+def _get_numeric_zoom(page_setup):
+    """Return a fixed template zoom percentage, excluding COM booleans."""
+    try:
+        zoom = page_setup.Zoom
+        if isinstance(zoom, bool):
+            return None
+        zoom = int(zoom)
+        if 10 <= zoom <= 400:
+            return zoom
+    except Exception:
+        pass
+    return None
+
+
+def _fix_wps_orphan_middle_page(ws, template_zoom, cancel_check=None):
+    """Preserve manual breaks and reduce zoom slightly to remove tiny middle pages."""
+    name = str(getattr(ws, "Name", "?")).strip()
+    original_display_page_breaks = None
+    orphan_rows = None
+
+    try:
+        try:
+            original_display_page_breaks = bool(ws.DisplayPageBreaks)
+        except Exception:
+            pass
+
+        for reduction in range(WPS_ORPHAN_ZOOM_MAX_REDUCTION + 1):
+            check_cancelled(cancel_check)
+            zoom = template_zoom - reduction
+            ws.PageSetup.Zoom = zoom
+            page_breaks = _read_wps_horizontal_page_breaks(ws)
+            orphan = _find_wps_orphan_middle_page(ws, page_breaks)
+            if orphan is None:
+                if reduction:
+                    print(
+                        f"   [fix] WPS orphan middle page: {name}, "
+                        f"rows {orphan_rows['first_row']}-{orphan_rows['last_row']}; "
+                        f"zoom {template_zoom}% -> {zoom}%"
+                    )
+                    return True
+                print(f"   [keep] WPS manual-break layout: {name}, zoom={template_zoom}%")
+                return False
+            orphan_rows = orphan
+
+        ws.PageSetup.Zoom = template_zoom
+        print(
+            f"   [warn] WPS orphan middle page remains: {name}, "
+            f"rows {orphan_rows['first_row']}-{orphan_rows['last_row']}; "
+            f"zoom restored to {template_zoom}%"
+        )
+        return False
+    except Exception as e:
+        try:
+            ws.PageSetup.Zoom = template_zoom
+        except Exception:
+            pass
+        print(f"   [skip] WPS orphan-page check skipped: {name} ({e})")
+        return False
+    finally:
+        if original_display_page_breaks is not None:
+            try:
+                ws.DisplayPageBreaks = original_display_page_breaks
+            except Exception:
+                pass
+
+def _fix_wps_footer_only_overflow(ws, cancel_check=None):
+    """Fit to one page tall only when page two contains a small report footer."""
+    name = str(getattr(ws, "Name", "?")).strip()
+    original_display_page_breaks = None
+    display_page_breaks_changed = False
+
+    try:
+        ws.Activate()
+        try:
+            original_display_page_breaks = bool(ws.DisplayPageBreaks)
+            if not original_display_page_breaks:
+                ws.DisplayPageBreaks = True
+                display_page_breaks_changed = True
+        except Exception:
+            pass
+
+        check_cancelled(cancel_check)
+        breaks = ws.HPageBreaks
+        break_count = int(breaks.Count)
+        if break_count != 1:
+            if break_count > 1:
+                print(f"   [keep] WPS multi-page layout retained: {name} ({break_count} breaks)")
+            return False
+
+        page_break = breaks.Item(1)
+        try:
+            if int(page_break.Type) == XL_PAGE_BREAK_MANUAL:
+                print(f"   [keep] WPS manual page break retained: {name}")
+                return False
+        except Exception:
+            pass
+
+        print_range = _get_print_range(ws)
+        first_row = int(print_range.Row)
+        first_col = int(print_range.Column)
+        last_row = first_row + int(print_range.Rows.Count) - 1
+        last_col = first_col + int(print_range.Columns.Count) - 1
+        break_row = int(page_break.Location.Row)
+        tail_rows = last_row - break_row + 1
+
+        if tail_rows <= 0 or tail_rows > WPS_TAIL_OVERFLOW_MAX_ROWS:
+            return False
+
+        total_height = 0.0
+        tail_height = 0.0
+        for row_number in range(first_row, last_row + 1):
+            check_cancelled(cancel_check)
+            height = _get_row_height(ws, row_number)
+            total_height += height
+            if row_number >= break_row:
+                tail_height += height
+
+        if total_height <= 0:
+            return False
+        tail_ratio = tail_height / total_height
+        if tail_ratio > WPS_TAIL_OVERFLOW_MAX_HEIGHT_RATIO:
+            return False
+
+        tail_range = ws.Range(
+            ws.Cells(break_row, first_col),
+            ws.Cells(last_row, last_col),
+        )
+        try:
+            tail_values = tail_range.Value2
+        except Exception:
+            tail_values = tail_range.Value
+        tail_text = " ".join(
+            str(value) for value in _flatten_com_values(tail_values)
+            if value not in (None, "")
+        )
+        marker_count = sum(marker in tail_text for marker in WPS_TAIL_MARKERS)
+        if marker_count < 2:
+            return False
+
+        ws.PageSetup.FitToPagesTall = 1
+        print(
+            f"   [fix] WPS footer-only overflow: {name}, "
+            f"break row {break_row}, tail {tail_rows} rows/{tail_ratio:.1%}; "
+            "fit to 1 page tall"
+        )
+        return True
+    except Exception as e:
+        print(f"   [skip] WPS tail-page check skipped: {name} ({e})")
+        return False
+    finally:
+        if display_page_breaks_changed and original_display_page_breaks is not None:
+            try:
+                ws.DisplayPageBreaks = original_display_page_breaks
+            except Exception:
+                pass
+
+
 def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
     """Standardize visible sheet PageSetup before WPS PDF export."""
     if EXCEL_TYPE.lower() != "wps":
         return
 
     prepared = 0
+    footer_overflow_fixed = 0
+    orphan_page_fixed = 0
     for ws in _iter_visible_sheets(wb):
         check_cancelled(cancel_check)
         try:
             name = str(ws.Name).strip()
             ps = ws.PageSetup
+            template_zoom = _get_numeric_zoom(ps)
             ps.PaperSize = XL_PAPER_A4
-            ps.Zoom = False
-            ps.FitToPagesWide = 1
-            if name in PDF_ONE_PAGE_SHEETS:
+
+            try:
+                initial_breaks = _read_wps_horizontal_page_breaks(ws)
+            except Exception as e:
+                initial_breaks = []
+                print(f"   [skip] WPS manual page-break detection skipped: {name} ({e})")
+            has_manual_breaks = any(
+                item["type"] == XL_PAGE_BREAK_MANUAL
+                for item in initial_breaks
+            )
+
+            if has_manual_breaks and template_zoom is not None:
+                ps.Zoom = template_zoom
+                if _fix_wps_orphan_middle_page(
+                    ws,
+                    template_zoom,
+                    cancel_check=cancel_check,
+                ):
+                    orphan_page_fixed += 1
+            elif name in PDF_ONE_PAGE_SHEETS:
+                ps.Zoom = False
+                ps.FitToPagesWide = 1
                 ps.FitToPagesTall = 1
             else:
+                ps.Zoom = False
+                ps.FitToPagesWide = 1
                 ps.FitToPagesTall = False
+                if _fix_wps_footer_only_overflow(ws, cancel_check=cancel_check):
+                    footer_overflow_fixed += 1
             prepared += 1
         except Exception as e:
             print(f"   [skip] WPS page setup skipped: {getattr(ws, 'Name', '?')} ({e})")
 
     if prepared:
         print(f"   [setup] WPS PDF page setup standardized: {prepared} visible sheets")
+    if footer_overflow_fixed:
+        print(f"   [fix] WPS footer-only page overflow fixed: {footer_overflow_fixed} sheets")
+    if orphan_page_fixed:
+        print(f"   [fix] WPS orphan middle page fixed: {orphan_page_fixed} sheets")
 
 def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_check=None):
     """使用Excel COM接口将Excel转换为PDF，保持所有格式。失败自动重试最多3次。"""
@@ -1078,8 +1371,6 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
 
             check_cancelled(cancel_check)
             hash_width_changed, hash_stats = _fix_hash_cells_before_pdf(wb, cancel_check=cancel_check)
-            _prepare_wps_pages_for_pdf_export(wb, cancel_check=cancel_check)
-
             if hash_width_changed:
                 check_cancelled(cancel_check)
                 wb.Save()
@@ -1087,6 +1378,8 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
                     "   [save] Excel saved after #### column width fixes "
                     f"({hash_stats['columns']} columns changed)"
                 )
+
+            _prepare_wps_pages_for_pdf_export(wb, cancel_check=cancel_check)
 
             check_cancelled(cancel_check)
             wb.ExportAsFixedFormat(0, pdf_path)  # 0 = xlTypePDF

@@ -4,42 +4,90 @@
 
 ---
 
-## v3.11.3 (2026-07-22) - WPS PDF export guard and #### column-width fix
+## v3.11.5（2026-07-23）- WPS 手工分页与单行夹心页修复
 
-### Background
-- Tested on 5 PCs: 2 Office PCs were normal; 2 of 3 WPS PCs produced extra PDF pages during automated export.
-- Manual WPS PDF export could still be normal, so the main risk is WPS COM `ExportAsFixedFormat()` pagination.
-- Some cells could also appear as `####` in the exported PDF when their displayed text overflowed the current column width.
+### 问题背景
+- 第89期.pdf 生成了 13 页，而第88期.pdf 为 12 页。
+- 多出的页面只包含测斜工作表中 CX2 的 12.0 m 一行数据。
+- 两个 Excel 的打印区域 A1:O84、重复标题行 1:7、缩放比例 56%、行高、列宽和手工分页符均一致。
+- 原因是 WPS 在模板手工分页符旁边又生成了一个自动分页符，形成只有一行的中间页面。
 
-### PDF Export Guard
-- Added `_fix_hash_cells_before_pdf()` before PDF export.
-- Detects `####` by reading COM `cell.Text`, not by searching `cell.Value`.
-- Does not change font size and does not use `ShrinkToFit`.
-- Only widens affected columns, up to 3 attempts per column.
-- Each widening step uses `max(old_width + 2, old_width * 1.15)`, capped at width 30.
-- If any column width changes, the generated Excel workbook is saved with `wb.Save()`.
+### 修改内容
+- 新增 _read_wps_horizontal_page_breaks() 和 _find_wps_orphan_middle_page()。
+- 带手工横向分页符的工作表保留模板固定缩放比例。
+- 仅当相邻分页符之间只有 1～2 行，并且至少一个边界是手工分页符时，判定为夹心页。
+- 每次降低 1% 缩放比例，最多尝试 3 次。
+- 如果夹心页仍然存在，恢复模板原始缩放比例。
+- WPS 无法读取分页符时，退回原有的一页宽处理路径。
+- 将 #### 列宽修改的 wb.Save() 移到 PDF 分页准备之前，临时分页参数不再保存进 Excel。
 
-### WPS Pagination Guard
-- Added `_prepare_wps_pages_for_pdf_export()`, enabled only in WPS mode.
-- Office mode keeps the previous pagination behavior.
-- WPS visible sheets use A4, `Zoom = False`, and `FitToPagesWide = 1`.
-- Fixed one-page sheets use `FitToPagesTall = 1`; data sheets keep natural vertical pagination.
-- Does not hard-code expected PDF page count, compare with previous PDFs, or globally clear page breaks.
+### 验证结果
+- Python 语法检查通过。
+- 56% 降至 55% 修复、正常多页保留、三次失败恢复、Office 旁路、旧版 WPS 回退和保存顺序模拟测试均通过。
+- 用户在 WPS 环境验证后反馈暂未发现问题。
 
-### Logs and Builds
-- Logs now include `found / resolved / unresolved` for `####` cells.
-- Logs include sheet/column, width before/after, attempts, affected cell count, unresolved count, and save status.
-- Morning test builds: `ExcelReportTool_v3.11.1_Windows_x64`, `ExcelReportTool_v3.11.2_Windows_x64`.
-- Current recommended build: `ExcelReportTool_v3.11.3_Windows_x64`.
-
-### Verification
-- `python -m py_compile report_maker.py gui_app.py utils.py` passed.
-- `_is_hash_display()` checks passed.
-- Mock COM tests passed for visible-sheet filtering, hidden-sheet skipping, width cap 30, and WPS PageSetup behavior.
-- Real Excel/WPS batch export was not run automatically to avoid closing active user workbooks.
+### 备份与发布
+- 代码备份：.backup\20260723_101954\report_maker.before-wps-orphan-page-fix.py
+- 推荐发布名称：ExcelReportTool_v3.11.5_Windows_x64
 
 ---
 
+## v3.11.4（2026-07-23）- WPS 签字备注尾部纵向跨页修复
+
+### 问题背景
+- 第95期.pdf 在 WPS 自动导出后增加到 17 页。
+- 第 6、8、10 页只包含三个工作表底部的签字和备注内容。
+- Office 导出正常，问题来自 WPS 对纵向可打印高度的计算差异。
+
+### 修改内容
+- 新增 _fix_wps_footer_only_overflow()，仅在 WPS 模式启用。
+- 只有一个自动分页符、没有手工分页符、尾部不超过 8 行、尾部高度不超过总高度 20%，并且至少命中两个尾部关键词时才触发。
+- 仅对检测到问题的工作表设置 FitToPagesTall = 1。
+- 手工分页表、正常多页表和 Office 模式保持不变。
+
+### 验证结果
+- Python 语法检查和模拟 COM 测试通过。
+- 已验证尾部少量跨页会修复，手工分页和正常多页结构会跳过。
+
+### 备份
+- .backup\20260723_091537\report_maker.before-wps-tail-overflow-fix.py
+
+---
+## v3.11.3（2026-07-22）- WPS PDF 导出保护与 #### 列宽修复
+
+### 问题背景
+- 共在 5 台电脑上测试：2 台 Office 电脑均正常，3 台 WPS 电脑中有 2 台在自动导出时产生了额外的 PDF 页面。
+- WPS 手工导出 PDF 仍可能正常，因此主要风险来自 WPS COM `ExportAsFixedFormat()` 的分页差异。
+- 某些单元格的显示内容超出当前列宽时，导出的 PDF 中还可能出现 `####`。
+
+### PDF 导出保护
+- 在导出 PDF 前新增 `_fix_hash_cells_before_pdf()`。
+- 通过读取 COM 的 `cell.Text` 检测 `####`，不搜索 `cell.Value`。
+- 不修改字体大小，也不使用 `ShrinkToFit`。
+- 只拓宽受影响的列，每列最多尝试 3 次。
+- 每次拓宽使用 `max(old_width + 2, old_width * 1.15)`，最大列宽限制为 30。
+- 如果任何列宽发生变化，通过 `wb.Save()` 保存生成的 Excel 工作簿。
+
+### WPS 分页保护
+- 新增 `_prepare_wps_pages_for_pdf_export()`，仅在 WPS 模式启用。
+- Office 模式保留原有分页行为。
+- WPS 的可见工作表使用 A4 纸张、`Zoom = False` 和 `FitToPagesWide = 1`。
+- 固定单页工作表使用 `FitToPagesTall = 1`；数据工作表保留自然的纵向分页。
+- 不写死预期 PDF 页数，不与上一期 PDF 页数比较，也不全局清除分页符。
+
+### 日志与构建版本
+- 日志会记录 `####` 单元格的发现、已解决和未解决数量。
+- 日志包含工作表、列、调整前后列宽、尝试次数、受影响单元格数量、未解决数量和保存状态。
+- 上午测试版本：`ExcelReportTool_v3.11.1_Windows_x64`、`ExcelReportTool_v3.11.2_Windows_x64`。
+- 当时推荐版本：`ExcelReportTool_v3.11.3_Windows_x64`。
+
+### 验证结果
+- `python -m py_compile report_maker.py gui_app.py utils.py` 检查通过。
+- `_is_hash_display()` 检查通过。
+- 可见工作表筛选、隐藏工作表跳过、最大列宽 30 和 WPS 页面设置行为的模拟 COM 测试通过。
+- 为避免关闭用户正在使用的工作簿，没有自动运行真实的 Excel/WPS 批量导出测试。
+
+---
 ## v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
 
 ### GUI 重设计
@@ -76,14 +124,14 @@ python -m PyInstaller --onefile --clean --windowed `
 
 ---
 
-## v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
+## v3.10 热修复（2026-06-27）- 步骤 4/步骤 5 性能优化
 
-### STEP4：Range 批量迁移
+### 步骤 4：使用 Range 批量迁移
 - 日期列迁移由逐单元格 COM 读写改为整段 `Range.Value` 批量读写
 - 保留“第3列为空时不覆盖第2列已有值”的原业务规则
 - 大幅减少跨进程 COM 调用，数据行越多收益越明显
 
-### STEP5：智能等待
+### 步骤 5：智能等待
 - 启动固定等待 2 秒改为检测 `Ready`：至少 0.5 秒、最多 2 秒
 - 使用 `LinkSources(1)` 检测外部链接，无链接时跳过按钮等待
 - 修复 `wait_until_passes()` 不会按 `False` 返回值持续等待的问题
@@ -93,14 +141,14 @@ python -m PyInstaller --onefile --clean --windowed `
 - 保留逐文件实例、保存关闭、进程清理、重试和安全停止逻辑
 
 ### 验证与备份
-- 语法检查及 STEP4/STEP5 模拟测试通过
+- 语法检查及 步骤 4/步骤 5 模拟测试通过
 - 未自动运行真实 Excel COM 测试，避免关闭用户当前工作簿
 - STEP4 备份：`.backup\20260626_164422\report_maker.before-step4-range.py`
 - STEP5 备份：`.backup\20260627_090812\report_maker.before-step5-smart-wait.py`
 
 ---
 
-## v3.10 Hotfix (2026-06-26) - 开发环境与打包修复
+## v3.10 热修复 (2026-06-26) - 开发环境与打包修复
 
 ### 环境与原因
 - 旧 `.venv` 指向已不存在的 `C:\Python314`，使用 `D:\mysoftware\python\python.exe`（Python 3.8.6）重建
@@ -123,7 +171,7 @@ python -m PyInstaller --onefile --clean `
 
 ---
 
-## v3.10 Hotfix (2026-06-26) - 鲁棒性增强
+## v3.10 热修复 (2026-06-26) - 鲁棒性增强
 
 ### 问题修复
 - **WPS 安全停止后可能仍残留表格进程**
@@ -154,7 +202,7 @@ python -m PyInstaller --onefile --clean `
 
 ---
 
-## v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
+## v3.10 热修复 (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 ### 问题修复
 - **WPS提示无法打开 `~$汇总表.xlsx`**
@@ -187,12 +235,12 @@ python -m PyInstaller --onefile --clean `
 ### 文档更新
 - README.md 增加 Q6 常见问题说明
 - PROJECT_LOG.txt 补充 2026-04-08 至 2026-04-21 前期开发记录
-- PROJECT_LOG.txt 追加 2026-06-02 Hotfix 和安全停止优化记录
+- PROJECT_LOG.txt 追加 2026-06-02 热修复 和安全停止优化记录
 - README.md / PROJECT_LOG.txt 记录 `run_queue.py` 路径自动化改动
 
 ---
 
-## v3.10 (2026-04-30) - Office/WPS下拉框
+## v3.10（2026-04-30）- Office/WPS 下拉框
 
 ### 新增功能
 - **Office/WPS下拉框**：gui_app.py参数区新增 `QComboBox`，运行时切换Excel类型
@@ -433,7 +481,7 @@ EXCEL_TYPE = "office"  # Office用户
 - **失败记录持久化**：成功后从 `failed_projects.txt` 移除，失败时加入，重试命令：`python run_queue.py --retry-failed --yes`
 
 **report_maker.py 健壮性增强：**
-- **Step5 文件级重试**：每个 Excel 文件最多重试 3 次，指数退避（1s/2s/4s）
+- **步骤 5 文件级重试**：每个 Excel 文件最多重试 3 次，指数退避（1s/2s/4s）
 - **PDF 转换重试**：PDF 生成失败自动重试最多 3 次，指数退避
 - **幂等性保护**：`copy_directory` 加 `force` 参数，pipeline 模式下自动覆盖不询问
 - **天气 API 指数退避**：心知天气、Open-Meteo Forecast、Historical 三个 API 各最多重试 3 次（1s/2s/4s）
@@ -532,10 +580,10 @@ python run_queue.py --dry-run
 
 ---
 
-## v3.1 (2026-04-15) - Step5 全自动化 + 13项代码优化
+## v3.1 (2026-04-15) - 步骤 5 全自动化 + 13项代码优化
 
 ### 核心突破
-- **Step5 全自动化**：pywinauto + COM 混合方案成功
+- **步骤 5 全自动化**：pywinauto + COM 混合方案成功
   - 7个纯 COM 方案失败后找到根本原因：Windows COM 单例机制
   - 最终方案：COM 负责打开/保存，pywinauto 点击"更新(&U)"按钮
   - 关键参数：`UpdateLinks=2` 强制弹出对话框，`DisplayAlerts=False` 对它无效
@@ -575,7 +623,7 @@ python run_queue.py --dry-run
 ### 技术突破
 - 发现 openpyxl 写公式不写值的问题，用 `data_only=True` 补救
 - 发现 COM 单例问题，开始研究 pywinauto 方案
-- 7个 Step5 自动化版本全部失败，找到根本原因
+- 7个 步骤 5 自动化版本全部失败，找到根本原因
 
 ---
 
@@ -590,7 +638,7 @@ python run_queue.py --dry-run
 ### 发现问题
 - openpyxl 写公式不写值的问题首次发现
 - xlwings 和 openpyxl 混用导致 COM 冲突
-- 开始研究 Step5 自动化方案
+- 开始研究 步骤 5 自动化方案
 
 ---
 
@@ -640,8 +688,8 @@ python run_queue.py --dry-run
 
 ## 📊 项目状态
 
-**当前版本**：**v3.11.3**（WPS PDF export guard + #### column-width fix）
-**最后更新**：2026-07-22
+**当前版本**：**v3.11.5**（WPS 分页兜底 + #### 列宽修复）
+**最后更新**：2026-07-23
 **维护者**：朱无理
 **Python版本**：3.8+
 **操作系统**：Windows 10/11
@@ -664,4 +712,4 @@ F:\myproject\rpt-maker\
 └── PROJECT_LOG.txt         # 详细开发记录
 ```
 
-*文档最后更新：2026-07-22*
+*文档最后更新：2026-07-23*

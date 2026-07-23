@@ -1,4 +1,4 @@
-# Excel汇总表自动处理工具 v3.11.3
+# Excel汇总表自动处理工具 v3.11.5
 
 > 自动把工程监测数据做成 PDF 报表，六步流程一键完成。
 
@@ -8,7 +8,7 @@
 
 ### 双击 exe 运行（最简单）
 
-1. 双击 `dist\ExcelReportTool_v3.11.3_Windows_x64.exe`
+1. 双击 `dist\ExcelReportTool_v3.11.5_Windows_x64.exe`
 2. 选择 Excel 类型（Microsoft Office 或 WPS Office）
 3. 点击"选择文件夹"，找到工程文件夹
 4. 填总期数和各期间隔天数
@@ -46,7 +46,7 @@
 **方式一：直接双击 exe（最简单，推荐）**
 
 1. 进入 `dist\` 文件夹
-2. 双击 `ExcelReportTool_v3.11.3_Windows_x64.exe`
+2. 双击 `ExcelReportTool_v3.11.5_Windows_x64.exe`
 3. 弹出图形界面
 4. 选择 Excel 类型
 5. 点击"选择文件夹" → 找到工程文件夹
@@ -75,12 +75,12 @@
 你会看到类似这样的输出：
 ```
 [9:20:15] 开始处理：工程A
-[9:20:16] Step1: 复制目录...
-[9:20:17] Step2: 删除PDF...
-[9:20:18] Step3: 修改封面（期数、天气）...
-[9:20:19] Step4: 处理日期列...
-[9:20:20] Step5: 处理外部引用...
-[9:20:21] Step6: 转换为PDF...
+[9:20:16] 步骤 1: 复制目录...
+[9:20:17] 步骤 2: 删除PDF...
+[9:20:18] 步骤 3: 修改封面（期数、天气）...
+[9:20:19] 步骤 4: 处理日期列...
+[9:20:20] 步骤 5: 处理外部引用...
+[9:20:21] 步骤 6: 转换为PDF...
 [9:20:25] ✓ 工程A 处理完成！
 ```
 
@@ -103,7 +103,7 @@ rpt-maker\
 ├── gui_app.py            # GUI打包入口（PyQt5）
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
-│   └── ExcelReportTool_v3.11.3_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
+│   └── ExcelReportTool_v3.11.5_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
@@ -118,7 +118,7 @@ rpt-maker\
 **你只需要关心 3 个地方：**
 1. **`queue\` 文件夹** - 放要处理的工程
 2. **`queue\done\` 文件夹** - 处理完的工程在这儿
-3. **`dist\ExcelReportTool_v3.11.3_Windows_x64.exe`** - 双击运行（无黑框GUI）
+3. **`dist\ExcelReportTool_v3.11.5_Windows_x64.exe`** - 双击运行（无黑框GUI）
 
 ---
 
@@ -138,7 +138,7 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 2. 确保项目目录下有 `queue\` 文件夹
 3. 确保 `report_maker.py` 和 `run_queue.py` 在同一个项目目录里
 
-> v3.10 Hotfix 后，`run_queue.py` 会自动根据脚本所在目录推导路径，一般不需要手动改路径。
+> v3.10 热修复 后，`run_queue.py` 会自动根据脚本所在目录推导路径，一般不需要手动改路径。
 
 ### Q3: 报错"Python不是内部或外部命令"
 **原因：** Python 没装好，或者环境变量没配
@@ -148,7 +148,7 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 3. 安装完成后重新打开命令提示符
 
 ### Q4: 运行后卡住了
-**原因：** Step5 可能正在等待 Excel/WPS 启动、外部链接更新或公式计算。
+**原因：** 步骤 5 可能正在等待 Excel/WPS 启动、外部链接更新或公式计算。
 **解决：** 当前版本已改为智能等待：Office 更新按钮最多等待 6 秒，WPS 最多等待 8 秒，公式计算最多等待 5 秒；状态就绪后会立即继续。若单个文件长时间无新日志，可点击 GUI 的“停止”进行安全退出后重试。
 
 ### Q5: 天气显示"模拟天气"
@@ -200,15 +200,15 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
 
 ## 🔧 六步处理流程
 
-### Step 1：复制目录
+### 步骤 1：复制目录
 - 期数+1（如：第87期 → 第88期）
 - 日期+自定义天数（如：04.09 → 04.10）
 - 保留所有文件结构
 
-### Step 2：删除PDF文件
+### 步骤 2：删除PDF文件
 - 清理新目录中的所有 PDF 文件（避免重复）
 
-### Step 3：修改Excel封面
+### 步骤 3：修改 Excel 封面
 - **期数**：查找"第X期"单元格，更新为新期数
 - **天气**：根据目标日期自动获取济南天气
   - 支持"天气：晴"格式（保留前缀）
@@ -216,13 +216,13 @@ pip install openpyxl pywin32 pywinauto requests PyQt5 pytz
   - 搜索范围：1-20行，5-40列
 - **兼容处理**：支持数值类型期数单元格（如 AC6 = 2）
 
-### Step 4：处理Excel日期列
+### 步骤 4：处理 Excel 日期列
 - **第2列 → 第1列**：数据迁移
 - **第3列 → 第2列**：只写数值（不写公式）
 - **第2列表头**：更新为目标日期
 - **兼容处理**：同时支持 datetime 对象和字符串格式
 
-### Step 5：自动处理外部引用（核心难点）
+### 步骤 5：自动处理外部引用（核心难点）
 
 **目标**：替代人工点击"是否更新链接"对话框
 
@@ -264,7 +264,7 @@ _kill_excel_process()              → 再杀一遍
 - `wait_until_passes(12, 0.5)`：最多等12秒，每0.5秒重试一次
 - 每个文件独立杀进程，保证 COM 实例 freshness
 
-### Step 6：Excel转PDF
+### 步骤 6：Excel 转 PDF
 - 自动将"第XX期.xlsx"转换为 PDF
 - 保持所有格式和布局
 - **失败自动重试**：最多3次，指数退避（1s/2s/4s）
@@ -288,7 +288,7 @@ _kill_excel_process()              → 再杀一遍
 
 | 操作 | 重试次数 | 退避策略 |
 |------|---------|---------|
-| Step5 外部引用处理 | 3次/文件 | 1s → 2s → 4s |
+| 步骤 5 外部引用处理 | 3次/文件 | 1s → 2s → 4s |
 | PDF 转换 | 3次/文件 | 1s → 2s → 4s |
 | 心知天气 API | 3次 | 1s → 2s → 4s |
 | Open-Meteo Forecast API | 3次 | 1s → 2s → 4s |
@@ -308,7 +308,7 @@ _kill_excel_process()              → 再杀一遍
 
 **WPS 兼容**：WPS 用户设置 `EXCEL_TYPE = "wps"`，窗口会闪一下但自动化正常工作。
 
-**进度条**：Step5 处理时显示进度条，TTY 下实时更新（Windows Console API 实现）。
+**进度条**：步骤 5 处理时显示进度条，TTY 下实时更新（Windows Console API 实现）。
 
 **颜色输出**：成功/失败/完成/警告 分别显示为绿/红/青/黄色。
 
@@ -378,7 +378,7 @@ python -m PyInstaller --onefile --clean `
   --hidden-import pywinauto.timings `
   --hidden-import pywinauto.application `
   --hidden-import pywinauto.findwindows `
-  --name "ExcelReportTool_v3.11.3_Windows_x64" gui_app.py
+  --name "ExcelReportTool_v3.11.5_Windows_x64" gui_app.py
 ```
 
 不要在当前环境使用 `--collect-all pywinauto`。如果打包日志显示 `Python environment: F:\anaconda`，说明实际调用了 Anaconda 的 PyInstaller，可能把 pandas、scipy、sklearn、Jupyter 等无关依赖一起收集，导致 exe 从约 66 MB 增长到数百 MB。
@@ -516,19 +516,31 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
-### v3.11.3 (2026-07-22) - WPS PDF export guard and #### column-width fix
-- Added WPS-only PDF PageSetup guard before `ExportAsFixedFormat()`.
-- WPS visible sheets now use A4, `Zoom = False`, and `FitToPagesWide = 1` before PDF export.
-- Fixed one-page sheets in WPS mode use `FitToPagesTall = 1`.
-- Data sheets keep natural vertical pagination, so manually added sheets or longer data can still produce more pages.
-- Added pre-PDF `####` detection using COM `cell.Text`, not cell value search.
-- `####` fix only changes column width. It does not change font size and does not use `ShrinkToFit`.
-- Each affected column can widen up to 3 times. Each step uses the larger of `+2` or `*1.15`, capped at column width 30.
-- Column-width changes are now saved back into the generated Excel workbook with `wb.Save()`.
-- Logs now show found/resolved/unresolved counts, sheet/column, width changes, attempt count, and save status.
-- Morning test builds: `ExcelReportTool_v3.11.1_Windows_x64`, `ExcelReportTool_v3.11.2_Windows_x64`.
-- Current recommended build: `ExcelReportTool_v3.11.3_Windows_x64`.
+### v3.11.5（2026-07-23）- WPS 手工分页与单行夹心页修复
+- 带手工分页符的工作表保留模板原有固定缩放比例，不再统一强制按一页宽重新计算。
+- 检测自动分页符与手工分页符相邻时形成的 1～2 行夹心页。
+- 每次降低 1% 缩放比例，最多尝试 3 次；如果仍未解决，自动恢复模板原缩放比例。
+- #### 列宽修改先保存，PDF 分页参数后设置，避免临时分页配置保存进 Excel。
+- 某些 WPS 版本无法读取分页符时，自动退回原有的一页宽处理逻辑。
+- 当前推荐发布名称：ExcelReportTool_v3.11.5_Windows_x64。
 
+### v3.11.4（2026-07-23）- WPS 签字备注尾部纵向跨页修复
+- 检测第二页只剩少量签字、备注内容的情况。
+- 触发条件：只有一个自动纵向分页符、尾部不超过 8 行、尾部高度不超过总高度 20%，并且至少命中两个尾部关键词。
+- 仅对发生问题的工作表设置一页高。
+- 手工分页表、正常多页表和 Office 模式保持不变。
+### v3.11.3（2026-07-22）- WPS PDF 导出保护与 #### 列宽修复
+- 在调用 `ExportAsFixedFormat()` 导出 PDF 前，新增仅用于 WPS 的页面设置保护。
+- WPS 模式下的可见工作表在导出 PDF 前统一使用 A4 纸张、`Zoom = False` 和 `FitToPagesWide = 1`。
+- WPS 模式下的固定单页工作表使用 `FitToPagesTall = 1`。
+- 数据工作表保留自然的纵向分页，因此手工新增工作表或数据变长时仍可正常产生更多页面。
+- 导出 PDF 前使用 COM 的 `cell.Text` 检测 `####`，不搜索单元格实际值。
+- `####` 修复只调整列宽，不修改字体大小，也不使用 `ShrinkToFit`。
+- 每个受影响列最多拓宽 3 次；每次取 `+2` 与 `*1.15` 中较大的结果，最大列宽限制为 30。
+- 列宽发生变化后，通过 `wb.Save()` 将修改保存到生成的 Excel 工作簿。
+- 日志会显示发现、已解决、未解决的数量，以及工作表、列、列宽变化、尝试次数和保存状态。
+- 上午测试版本：`ExcelReportTool_v3.11.1_Windows_x64`、`ExcelReportTool_v3.11.2_Windows_x64`。
+- 当时推荐版本：`ExcelReportTool_v3.11.3_Windows_x64`。
 ### v3.11 (2026-07-03) - GUI 重设计 + 无黑框发布体验
 - GUI 从原单列表单改为“工作台”布局：顶部品牌区、左侧任务配置、右侧运行状态与实时日志
 - 界面版本号更新为 `v3.11`，推荐 exe 名称更新为 `ExcelReportTool_v3.11.3_Windows_x64.exe`
@@ -539,14 +551,14 @@ F:\myproject\rpt-maker\.logs\
 - 左侧配置区重排并修复小窗口下文字重叠、按钮压住内容的问题
 - 保留原 Excel/WPS 自动化处理逻辑，本次主要是 GUI 与发布体验升级
 
-### v3.10 Hotfix (2026-06-27) - STEP4/STEP5 性能优化
+### v3.10 热修复（2026-06-27）- 步骤 4/步骤 5 性能优化
 
-**STEP4 数据迁移优化**：
+**步骤 4 数据迁移优化**：
 - Excel 单元格逐行 COM 读写改为 `Range.Value` 批量读写
 - 保留“第3列为空时不覆盖第2列原值”的业务规则
 - 备份：`.backup\20260626_164422\report_maker.before-step4-range.py`
 
-**STEP5 智能等待优化**：
+**步骤 5 智能等待优化**：
 - 启动等待由固定 2 秒改为检测 `Excel.Ready`，至少 0.5 秒、最多 2 秒
 - 无外部链接的工作簿直接跳过更新按钮等待
 - Office/WPS 更新按钮分别最多轮询 6 秒/8 秒，找到后立即继续
@@ -556,12 +568,12 @@ F:\myproject\rpt-maker\.logs\
 
 **验证**：
 - `python -m py_compile report_maker.py gui_app.py run_queue.py` 通过
-- STEP4 Range 数据形状与空值保留辅助测试通过
-- STEP5 就绪等待、计算等待、链接检测、按钮轮询、安全取消和完整模拟流程通过
+- 步骤 4 Range 数据形状与空值保留辅助测试通过
+- 步骤 5 就绪等待、计算等待、链接检测、按钮轮询、安全取消和完整模拟流程通过
 
 ---
 
-### v3.10 Hotfix (2026-06-26) - 开发环境与打包修复
+### v3.10 热修复 (2026-06-26) - 开发环境与打包修复
 
 - 发现旧 `.venv` 指向已不存在的 `C:\Python314`，使用本机 Python 3.8.6 重建
 - 新 `.venv` 已验证 PyQt5、openpyxl、win32com、pywinauto、requests、PyInstaller、tqdm 可导入
@@ -571,7 +583,7 @@ F:\myproject\rpt-maker\.logs\
 
 ---
 
-### v3.10 Hotfix (2026-06-26) - 鲁棒性增强
+### v3.10 热修复 (2026-06-26) - 鲁棒性增强
 
 **新增增强**：
 - WPS 模式下清理 `EXCEL.EXE` 的同时额外清理 `et.exe`
@@ -585,7 +597,7 @@ F:\myproject\rpt-maker\.logs\
 
 ---
 
-### v3.10 Hotfix (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
+### v3.10 热修复 (2026-06-02) - 临时文件过滤 + 安全停止 + 路径自动化
 
 **问题修复**：
 - 修复 WPS 提示无法打开 `~$汇总表.xlsx` 的问题
@@ -615,11 +627,11 @@ F:\myproject\rpt-maker\.logs\
 
 **文档更新**：
 - 常见问题新增 Q6
-- PROJECT_LOG.txt 补充前期开发记录和本次 Hotfix / 安全停止 / 路径自动化记录
+- PROJECT_LOG.txt 补充前期开发记录和本次 热修复 / 安全停止 / 路径自动化记录
 
 ---
 
-### v3.10 (2026-04-30) - Office/WPS下拉框
+### v3.10（2026-04-30）- Office/WPS 下拉框
 
 **新增功能**：
 - **Office/WPS下拉框**：gui_app.py 参数区新增下拉框，运行时切换 Excel 类型
@@ -642,7 +654,7 @@ F:\myproject\rpt-maker\.logs\
 **问题修复**：
 - 代码生成的汇总表 I 列超出理论范围的问题
 - 原因：openpyxl 赋值不触发 RANDBETWEEN 重算
-- 解决：Step4 全部改用 COM 完成，模拟手工操作触发 F 列重新计算
+- 解决：步骤 4 全部改用 COM 完成，模拟手工操作触发 F 列重新计算
 
 ---
 ### v3.7 (2026-04-22) - 代码质量优化 + 配置区重组
@@ -694,7 +706,7 @@ F:\myproject\rpt-maker\.logs\
 - 失败记录持久化：成功后自动移除，失败时加入
 
 **report_maker.py 健壮性增强**：
-- Step5 文件级重试：每个 Excel 文件最多重试 3 次，指数退避
+- 步骤 5 文件级重试：每个 Excel 文件最多重试 3 次，指数退避
 - PDF 转换重试：PDF 生成失败自动重试最多 3 次
 - 幂等性保护：`copy_directory` 加 `force` 参数
 - 天气 API 指数退避：三个 API 各最多重试 3 次
@@ -728,7 +740,7 @@ F:\myproject\rpt-maker\.logs\
 
 ---
 
-### v3.1 (2026-04-15) - Step5 全自动化
+### v3.1 (2026-04-15) - 步骤 5 全自动化
 
 - **核心突破**：pywinauto + COM 混合方案成功
 - 7个纯 COM 方案失败后找到根本原因
@@ -739,7 +751,7 @@ F:\myproject\rpt-maker\.logs\
 ### v3.0 (2026-04-14) - 批量处理框架完成
 
 - 六步主流程全部实现
-- 7个 Step5 版本全部失败，找到根本原因
+- 7个 步骤 5 版本全部失败，找到根本原因
 
 ---
 
@@ -757,7 +769,7 @@ F:\myproject\rpt-maker\.logs\
 </details>
 
 <details>
-<summary><strong>📌 Step5自动化历程 — 点击展开</strong></summary>
+<summary><strong>📌 步骤 5 自动化历程 — 点击展开</strong></summary>
 
 ---
 
@@ -884,17 +896,17 @@ F:\myproject\rpt-maker\.logs\
 
 | 项目 | 内容 |
 |------|------|
-| 当前版本 | **v3.11.3** |
-| 最后更新 | 2026-07-22 |
+| 当前版本 | **v3.11.5** |
+| 最后更新 | 2026-07-23 |
 | 维护者 | 朱无理 |
-| 项目历时 | 2026-04-08 至 2026-07-22 |
+| 项目历时 | 2026-04-08 至 2026-07-23 |
 | Python版本 | 3.8+ |
 | 操作系统 | Windows 10/11 |
 | 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz |
 
 ---
 
-*最后更新：2026-07-22*
-*版本：v3.11.3*
+*最后更新：2026-07-23*
+*版本：v3.11.5*
 
 </details>
