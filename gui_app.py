@@ -44,7 +44,7 @@ if sys.stderr is None:
     sys.stderr = SafeNullStream()
 
 
-APP_VERSION = "v3.11"
+APP_VERSION = "v3.12.0"
 APP_TITLE = f"Excel报表工具 {APP_VERSION}"
 
 
