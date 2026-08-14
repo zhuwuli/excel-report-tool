@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 import subprocess
 import json
@@ -30,6 +31,7 @@ import random
 import win32com.client
 import winreg
 import pywinauto
+from PyPDF2 import PdfReader, PdfWriter
 
 # 共享工具：颜色输出、IDE环境检测
 from utils import green, red, yellow, cyan, bold, HAS_COLOR
@@ -915,6 +917,9 @@ WPS_TAIL_OVERFLOW_MAX_ROWS = 8
 WPS_TAIL_OVERFLOW_MAX_HEIGHT_RATIO = 0.20
 WPS_ORPHAN_PAGE_MAX_ROWS = 2
 WPS_ORPHAN_ZOOM_MAX_REDUCTION = 3
+PDF_REPORT_ONE_PAGE_MAX_ROWS = 60
+PDF_BLANK_CONTENT_MAX_BYTES = 40
+XL_PAGE_BREAK_AUTOMATIC = -4105
 WPS_TAIL_MARKERS = (
     "\u65bd\u5de5\u5de5\u51b5",
     "\u73b0\u573a\u76d1\u6d4b\u4eba",
@@ -1279,11 +1284,180 @@ def _fix_wps_footer_only_overflow(ws, cancel_check=None):
                 pass
 
 
-def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
+def _get_pdf_sheet_policy(ws):
+    """Classify one visible sheet without assuming a fixed workbook page count."""
+    name = str(getattr(ws, "Name", "?")).strip()
+    row_count = None
+    marker_count = 0
+
+    try:
+        print_range = _get_print_range(ws)
+        row_count = int(print_range.Rows.Count)
+    except Exception:
+        print_range = None
+
+    if name in PDF_ONE_PAGE_SHEETS:
+        return {
+            "name": name,
+            "expected_one_page": True,
+            "reason": "固定单页工作表",
+            "print_rows": row_count,
+            "marker_count": marker_count,
+        }
+
+    if print_range is not None and row_count <= PDF_REPORT_ONE_PAGE_MAX_ROWS:
+        try:
+            try:
+                values = print_range.Value2
+            except Exception:
+                values = print_range.Value
+            text = " ".join(
+                str(value) for value in _flatten_com_values(values)
+                if value not in (None, "")
+            )
+            marker_count = sum(marker in text for marker in WPS_TAIL_MARKERS)
+        except Exception:
+            marker_count = 0
+
+    expected_one_page = marker_count >= 2
+    return {
+        "name": name,
+        "expected_one_page": expected_one_page,
+        "reason": "短篇监测报表" if expected_one_page else "保留自然分页",
+        "print_rows": row_count,
+        "marker_count": marker_count,
+    }
+
+
+def _build_pdf_sheet_policies(wb, cancel_check=None):
+    """Build export policies in workbook order for visible worksheets only."""
+    policies = []
+    for index in range(1, wb.Worksheets.Count + 1):
+        check_cancelled(cancel_check)
+        ws = wb.Worksheets(index)
+        if ws.Visible != XL_SHEET_VISIBLE:
+            continue
+        policy = _get_pdf_sheet_policy(ws)
+        policy["index"] = index
+        policies.append(policy)
+    return policies
+
+
+def _delete_manual_page_breaks(page_breaks):
+    """Best-effort fallback when Worksheet.ResetAllPageBreaks is unavailable."""
+    deleted = 0
+    try:
+        count = int(page_breaks.Count)
+    except Exception:
+        return deleted
+
+    for index in range(count, 0, -1):
+        try:
+            page_breaks.Item(index).Delete()
+            deleted += 1
+        except Exception:
+            pass
+    return deleted
+
+
+def _apply_one_page_pdf_layout(ws, reason):
+    """Force an expected one-page sheet to one A4 page in memory only."""
+    name = str(getattr(ws, "Name", "?")).strip()
+    ws.Activate()
+    clear_mode = "ResetAllPageBreaks"
+    try:
+        ws.ResetAllPageBreaks()
+    except Exception:
+        deleted = 0
+        try:
+            deleted += _delete_manual_page_breaks(ws.HPageBreaks)
+        except Exception:
+            pass
+        try:
+            deleted += _delete_manual_page_breaks(ws.VPageBreaks)
+        except Exception:
+            pass
+        clear_mode = f"deleted {deleted} manual breaks"
+
+    page_setup = ws.PageSetup
+    try:
+        page_setup.PaperSize = XL_PAPER_A4
+    except Exception as e:
+        print(f"   [warn] A4 page size could not be set: {name} ({e})")
+    page_setup.Zoom = False
+    page_setup.FitToPagesWide = 1
+    page_setup.FitToPagesTall = 1
+    print(f"   [protect] one-page layout: {name} ({reason}; {clear_mode})")
+
+
+def _read_vertical_page_breaks(ws):
+    """Return vertical page break column/type records after a layout refresh."""
+    ws.Activate()
+    try:
+        ws.DisplayPageBreaks = False
+        ws.DisplayPageBreaks = True
+    except Exception:
+        pass
+
+    records = []
+    breaks = ws.VPageBreaks
+    for index in range(1, int(breaks.Count) + 1):
+        page_break = breaks.Item(index)
+        break_type = None
+        for _ in range(3):
+            try:
+                break_type = int(page_break.Type)
+                break
+            except Exception:
+                time.sleep(0.05)
+        records.append({
+            "column": int(page_break.Location.Column),
+            "type": break_type,
+        })
+    records.sort(key=lambda item: item["column"])
+    return records
+
+
+def _fix_automatic_vertical_overflow(ws):
+    """Fit one page wide only when all detected vertical breaks are automatic."""
+    name = str(getattr(ws, "Name", "?")).strip()
+    try:
+        page_breaks = _read_vertical_page_breaks(ws)
+    except Exception as e:
+        print(f"   [skip] vertical page-break check skipped: {name} ({e})")
+        return False
+
+    if not page_breaks:
+        return False
+    if any(item["type"] == XL_PAGE_BREAK_MANUAL for item in page_breaks):
+        print(f"   [keep] manual vertical page break retained: {name}")
+        return False
+    if any(item["type"] != XL_PAGE_BREAK_AUTOMATIC for item in page_breaks):
+        print(f"   [warn] vertical page-break type unavailable; layout retained: {name}")
+        return False
+
+    page_setup = ws.PageSetup
+    try:
+        page_setup.PaperSize = XL_PAPER_A4
+    except Exception:
+        pass
+    page_setup.Zoom = False
+    page_setup.FitToPagesWide = 1
+    page_setup.FitToPagesTall = False
+    columns = ",".join(str(item["column"]) for item in page_breaks)
+    print(f"   [protect] automatic horizontal overflow removed: {name} (before columns {columns})")
+    return True
+
+def _prepare_wps_pages_for_pdf_export(
+    wb,
+    cancel_check=None,
+    one_page_sheet_names=None,
+):
     """Standardize visible sheet PageSetup before WPS PDF export."""
     if EXCEL_TYPE.lower() != "wps":
         return
 
+    one_page_sheet_names = set(one_page_sheet_names or PDF_ONE_PAGE_SHEETS)
     prepared = 0
     footer_overflow_fixed = 0
     orphan_page_fixed = 0
@@ -1293,7 +1467,16 @@ def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
             name = str(ws.Name).strip()
             ps = ws.PageSetup
             template_zoom = _get_numeric_zoom(ps)
-            ps.PaperSize = XL_PAPER_A4
+
+            if name in one_page_sheet_names:
+                _apply_one_page_pdf_layout(ws, "WPS单页保护")
+                prepared += 1
+                continue
+
+            try:
+                ps.PaperSize = XL_PAPER_A4
+            except Exception as e:
+                print(f"   [warn] WPS A4 page size could not be set: {name} ({e})")
 
             try:
                 initial_breaks = _read_wps_horizontal_page_breaks(ws)
@@ -1313,10 +1496,6 @@ def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
                     cancel_check=cancel_check,
                 ):
                     orphan_page_fixed += 1
-            elif name in PDF_ONE_PAGE_SHEETS:
-                ps.Zoom = False
-                ps.FitToPagesWide = 1
-                ps.FitToPagesTall = 1
             else:
                 ps.Zoom = False
                 ps.FitToPagesWide = 1
@@ -1334,8 +1513,314 @@ def _prepare_wps_pages_for_pdf_export(wb, cancel_check=None):
     if orphan_page_fixed:
         print(f"   [fix] WPS orphan middle page fixed: {orphan_page_fixed} sheets")
 
+
+def _prepare_pages_for_pdf_export(wb, cancel_check=None):
+    """Prepare Office/WPS layouts and return per-sheet validation policies."""
+    policies = _build_pdf_sheet_policies(wb, cancel_check=cancel_check)
+    one_page_names = {
+        policy["name"] for policy in policies if policy["expected_one_page"]
+    }
+    is_wps = EXCEL_TYPE.lower() == "wps"
+
+    if is_wps:
+        _prepare_wps_pages_for_pdf_export(
+            wb,
+            cancel_check=cancel_check,
+            one_page_sheet_names=one_page_names,
+        )
+
+    vertical_overflow_fixed = 0
+    for policy in policies:
+        check_cancelled(cancel_check)
+        ws = wb.Worksheets(policy["index"])
+        try:
+            if not is_wps:
+                if policy["expected_one_page"]:
+                    _apply_one_page_pdf_layout(ws, policy["reason"])
+                else:
+                    try:
+                        ws.PageSetup.PaperSize = XL_PAPER_A4
+                    except Exception as e:
+                        print(
+                            f"   [warn] A4 page size could not be set: "
+                            f"{policy['name']} ({e})"
+                        )
+
+            if not policy["expected_one_page"]:
+                if _fix_automatic_vertical_overflow(ws):
+                    vertical_overflow_fixed += 1
+        except Exception as e:
+            print(f"   [warn] page protection incomplete: {policy['name']} ({e})")
+
+    one_page_count = sum(
+        1 for policy in policies if policy["expected_one_page"]
+    )
+    print(
+        f"   [plan] PDF validation: {len(policies)} visible sheets, "
+        f"{one_page_count} expected one-page sheets, "
+        f"{len(policies) - one_page_count} natural multi-page sheets"
+    )
+    if vertical_overflow_fixed:
+        print(
+            "   [fix] automatic horizontal overflow fixed: "
+            f"{vertical_overflow_fixed} sheets"
+        )
+    return policies
+
+class PdfValidationError(RuntimeError):
+    """Raised when a generated PDF fails a deterministic safety check."""
+
+
+def _close_pdf_reader(reader):
+    """Close the stream created by PdfReader(path) when the version exposes it."""
+    try:
+        stream = getattr(reader, "stream", None)
+        if stream is not None and hasattr(stream, "close"):
+            stream.close()
+    except Exception:
+        pass
+
+
+def _pdf_page_content_size(page):
+    """Return decoded content-stream bytes used for conservative blank detection."""
+    try:
+        contents = page.get_contents()
+        if contents is None:
+            return 0
+        if hasattr(contents, "get_data"):
+            return len(contents.get_data() or b"")
+        total = 0
+        for item in contents:
+            obj = item.get_object() if hasattr(item, "get_object") else item
+            if hasattr(obj, "get_data"):
+                total += len(obj.get_data() or b"")
+        return total
+    except Exception:
+        return 0
+
+
+def _pdf_page_xobject_count(page):
+    """Count page images/forms so image-only plans are not mistaken for blank pages."""
+    try:
+        resources = page.get("/Resources")
+        if hasattr(resources, "get_object"):
+            resources = resources.get_object()
+        if not resources:
+            return 0
+        xobjects = resources.get("/XObject")
+        if hasattr(xobjects, "get_object"):
+            xobjects = xobjects.get_object()
+        return len(xobjects or {})
+    except Exception:
+        return 0
+
+
+def _open_pdf_reader(pdf_path):
+    """Open one generated PDF and reject encrypted output."""
+    reader = PdfReader(pdf_path)
+    if reader.is_encrypted:
+        try:
+            unlocked = reader.decrypt("")
+        except Exception:
+            unlocked = 0
+        if not unlocked:
+            _close_pdf_reader(reader)
+            raise PdfValidationError(
+                f"PDF is encrypted and cannot be validated: {pdf_path}"
+            )
+    return reader
+
+
+def _validate_pdf_pages(reader, label):
+    """Reject visible #### and genuinely empty PDF pages."""
+    errors = []
+    warnings_found = []
+    hash_pattern = re.compile(r"(?:#\s*){3,}")
+
+    for page_number, page in enumerate(reader.pages, start=1):
+        try:
+            text = page.extract_text() or ""
+        except Exception as e:
+            errors.append(f"page {page_number} text extraction failed: {e}")
+            continue
+
+        if hash_pattern.search(text):
+            errors.append(f"page {page_number} contains ####")
+
+        compact_text = re.sub(r"\s+", "", text)
+        content_size = _pdf_page_content_size(page)
+        xobject_count = _pdf_page_xobject_count(page)
+        if (
+            not compact_text
+            and xobject_count == 0
+            and content_size <= PDF_BLANK_CONTENT_MAX_BYTES
+        ):
+            errors.append(f"page {page_number} is blank")
+        elif len(compact_text) <= 8 and xobject_count == 0:
+            warnings_found.append(
+                f"{label} page {page_number} has very little extractable text"
+            )
+
+    if errors:
+        raise PdfValidationError(f"{label}: " + "; ".join(errors))
+    return warnings_found
+
+
+def _wait_for_pdf_file(pdf_path, timeout=30.0):
+    """Wait until WPS/Office has finished writing a non-empty stable PDF file."""
+    deadline = time.monotonic() + timeout
+    previous_size = None
+    stable_hits = 0
+
+    while time.monotonic() < deadline:
+        if os.path.exists(pdf_path):
+            try:
+                size = os.path.getsize(pdf_path)
+            except OSError:
+                size = 0
+            if size > 0 and size == previous_size:
+                stable_hits += 1
+                if stable_hits >= 2:
+                    return
+            else:
+                stable_hits = 0
+            previous_size = size
+        time.sleep(0.15)
+
+    raise PdfValidationError(
+        f"temporary PDF was not written completely within {timeout:.0f}s"
+    )
+
+
+def _validate_sheet_pdf(pdf_path, policy):
+    """Validate one worksheet PDF and return page count plus warnings."""
+    reader = None
+    try:
+        reader = _open_pdf_reader(pdf_path)
+        page_count = len(reader.pages)
+        if page_count < 1:
+            raise PdfValidationError(f"{policy['name']}: PDF has no pages")
+        if policy["expected_one_page"] and page_count != 1:
+            raise PdfValidationError(
+                f"{policy['name']}: expected 1 page but exported {page_count} pages"
+            )
+        warnings_found = _validate_pdf_pages(reader, policy["name"])
+        return {
+            "pages": page_count,
+            "warnings": warnings_found,
+        }
+    except PdfValidationError:
+        raise
+    except Exception as e:
+        raise PdfValidationError(
+            f"{policy['name']}: PDF could not be parsed ({e})"
+        ) from e
+    finally:
+        if reader is not None:
+            _close_pdf_reader(reader)
+
+
+def _merge_sheet_pdfs(sheet_results, merged_pdf_path):
+    """Merge already validated worksheet PDFs in workbook order."""
+    writer = PdfWriter()
+    readers = []
+    try:
+        for result in sheet_results:
+            reader = _open_pdf_reader(result["path"])
+            readers.append(reader)
+            for page in reader.pages:
+                writer.add_page(page)
+        with open(merged_pdf_path, "wb") as output:
+            writer.write(output)
+    finally:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        for reader in readers:
+            _close_pdf_reader(reader)
+
+
+def _validate_merged_pdf(pdf_path, expected_page_count):
+    """Reopen the merged PDF before publication and verify its final page count."""
+    reader = None
+    try:
+        reader = _open_pdf_reader(pdf_path)
+        actual_page_count = len(reader.pages)
+        if actual_page_count != expected_page_count:
+            raise PdfValidationError(
+                "merged PDF page count mismatch: "
+                f"expected {expected_page_count}, got {actual_page_count}"
+            )
+        _validate_pdf_pages(reader, "merged PDF")
+        return actual_page_count
+    finally:
+        if reader is not None:
+            _close_pdf_reader(reader)
+
+
+def _export_validated_workbook_pdf(
+    wb,
+    pdf_path,
+    policies,
+    cancel_check=None,
+):
+    """Export sheets to temp PDFs, validate them, then atomically publish one PDF."""
+    output_dir = os.path.abspath(os.path.dirname(pdf_path) or ".")
+    os.makedirs(output_dir, exist_ok=True)
+    temp_dir = tempfile.mkdtemp(prefix=".pdf_validation_", dir=output_dir)
+    sheet_results = []
+
+    try:
+        for position, policy in enumerate(policies, start=1):
+            check_cancelled(cancel_check)
+            ws = wb.Worksheets(policy["index"])
+            sheet_pdf_path = os.path.join(temp_dir, f"sheet_{position:03d}.pdf")
+
+            try:
+                ws.Select()
+            except Exception:
+                ws.Activate()
+            ws.ExportAsFixedFormat(0, sheet_pdf_path)
+            _wait_for_pdf_file(sheet_pdf_path)
+
+            validation = _validate_sheet_pdf(sheet_pdf_path, policy)
+            sheet_results.append({
+                "path": sheet_pdf_path,
+                "policy": policy,
+                "pages": validation["pages"],
+            })
+            expectation = "应为单页" if policy["expected_one_page"] else "自然分页"
+            print(
+                f"   [check] {policy['name']}: {validation['pages']} page(s), "
+                f"{expectation}, passed"
+            )
+            for warning in validation["warnings"]:
+                print(f"   [warn] {warning}")
+
+        if not sheet_results:
+            raise PdfValidationError("workbook has no visible worksheets to export")
+
+        expected_page_count = sum(result["pages"] for result in sheet_results)
+        merged_pdf_path = os.path.join(temp_dir, "validated_merged.pdf")
+        _merge_sheet_pdfs(sheet_results, merged_pdf_path)
+        _wait_for_pdf_file(merged_pdf_path)
+        actual_page_count = _validate_merged_pdf(
+            merged_pdf_path,
+            expected_page_count,
+        )
+
+        check_cancelled(cancel_check)
+        os.replace(merged_pdf_path, pdf_path)
+        return {
+            "pages": actual_page_count,
+            "sheets": len(sheet_results),
+        }
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
 def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_check=None):
-    """使用Excel COM接口将Excel转换为PDF，保持所有格式。失败自动重试最多3次。"""
+    """将工作簿逐表导出、校验并合并为PDF；失败时保留原PDF。"""
     if not os.path.exists(excel_path):
         print(f"[失败] Excel文件不存在: {excel_path}")
         return False
@@ -1348,19 +1833,23 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
     print(f"\n[文件] 正在转换: {os.path.basename(excel_path)}")
     print(f"   输出: {os.path.basename(pdf_path)}")
 
-    last_error = None
-
     for attempt in range(max_retries):
         check_cancelled(cancel_check)
         excel = None
         wb = None
+        previous_pdf_exists = os.path.exists(pdf_path)
         try:
-            if os.path.exists(pdf_path):
-                print(f"[警告] PDF已存在，将被覆盖: {pdf_path}")
+            if previous_pdf_exists:
+                print(
+                    f"[保护] PDF已存在，只有新文件校验通过后才会替换: {pdf_path}"
+                )
 
             excel = win32com.client.Dispatch("Excel.Application")
             excel.Visible = EXCEL_VISIBLE
-            print(f"[DEBUG Step6] excel_type={EXCEL_TYPE}, EXCEL_VISIBLE={EXCEL_VISIBLE}, Visible set to {EXCEL_VISIBLE}")
+            print(
+                f"[DEBUG Step6] excel_type={EXCEL_TYPE}, "
+                f"EXCEL_VISIBLE={EXCEL_VISIBLE}, Visible set to {EXCEL_VISIBLE}"
+            )
             excel.DisplayAlerts = False
             excel.ScreenUpdating = False
 
@@ -1370,7 +1859,10 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
             print(f"   发现 {sheet_count} 个工作表")
 
             check_cancelled(cancel_check)
-            hash_width_changed, hash_stats = _fix_hash_cells_before_pdf(wb, cancel_check=cancel_check)
+            hash_width_changed, hash_stats = _fix_hash_cells_before_pdf(
+                wb,
+                cancel_check=cancel_check,
+            )
             if hash_width_changed:
                 check_cancelled(cancel_check)
                 wb.Save()
@@ -1378,30 +1870,53 @@ def excel_to_pdf(excel_path, pdf_path=None, max_retries=MAX_RETRIES, cancel_chec
                     "   [save] Excel saved after #### column width fixes "
                     f"({hash_stats['columns']} columns changed)"
                 )
+            if hash_stats["unresolved"]:
+                raise PdfValidationError(
+                    "#### cells remain after the maximum column-width adjustment: "
+                    f"{hash_stats['unresolved']} cell(s)"
+                )
 
-            _prepare_wps_pages_for_pdf_export(wb, cancel_check=cancel_check)
-
+            policies = _prepare_pages_for_pdf_export(
+                wb,
+                cancel_check=cancel_check,
+            )
             check_cancelled(cancel_check)
-            wb.ExportAsFixedFormat(0, pdf_path)  # 0 = xlTypePDF
+            result = _export_validated_workbook_pdf(
+                wb,
+                pdf_path,
+                policies,
+                cancel_check=cancel_check,
+            )
 
-            if os.path.exists(pdf_path):
-                size_kb = os.path.getsize(pdf_path) / 1024
-                print(f"   [成功] PDF已生成: {size_kb:.1f} KB")
-                return True
-            else:
-                print(f"   [失败] PDF生成失败（文件不存在）")
+            size_kb = os.path.getsize(pdf_path) / 1024
+            print(
+                f"   [成功] PDF已生成并通过校验: {size_kb:.1f} KB, "
+                f"{result['sheets']} 个工作表/{result['pages']} 页"
+            )
+            return True
 
         except PipelineCancelled:
-            print("   [停止] 用户请求停止PDF转换")
+            print("   [停止] 用户请求停止PDF转换，正式PDF未被不完整文件覆盖")
             raise
+        except PdfValidationError as e:
+            print(f"   [阻止] PDF校验未通过: {e}")
+            if previous_pdf_exists:
+                print("   [保护] 原PDF保持不变")
+            else:
+                print("   [保护] 未发布不合格PDF")
+            break
         except Exception as e:
-            last_error = e
             if attempt < max_retries - 1:
                 wait_seconds = RETRY_BACKOFF[attempt]
-                print(f"   [重试] 第 {attempt + 1} 次失败: {e}，等待 {wait_seconds}s...")
+                print(
+                    f"   [重试] 第 {attempt + 1} 次失败: {e}，"
+                    f"等待 {wait_seconds}s..."
+                )
                 time.sleep(wait_seconds)
             else:
                 print(f"   [最终] PDF转换失败（{max_retries}次重试）: {e}")
+                if previous_pdf_exists:
+                    print("   [保护] 原PDF保持不变")
 
         finally:
             if wb is not None:
