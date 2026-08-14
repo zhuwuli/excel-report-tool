@@ -4,7 +4,7 @@
 
 ---
 
-## 待发布（2026-08-14）- PDF 逐表校验与安全发布
+## v3.12.0（2026-08-14）- PDF 逐表校验与安全发布
 
 ### 结论说明
 - 2026-08-13 的分页修复尝试没有稳定解决问题，相关方案已回退，不计入成功版本，也不作为发布依据。
@@ -29,9 +29,11 @@
 - `gui_app.py`、`report_maker.py`、`run_queue.py` 和 `utils.py` 语法编译及模块导入通过。
 - 本机完成 Office 实际导出和 WPS 代码路径验证；真实 WPS 引擎仍以目标电脑最终试跑为准。
 
-### 发布状态
-- 当前发布基线仍为 v3.11.5。
-- 下一正式版本号、GUI 标题和 EXE 名称尚未统一，因此本条先记为“待发布”。
+### 发布信息
+- 正式版本号：v3.12.0。
+- GUI 标题版本：v3.12.0。
+- 发布文件：`ExcelReportTool_v3.12.0_Windows_x64.exe`。
+- GitHub Release 标签：`v3.12.0`。
 - 修改前备份：`.backup\20260814_143036_before-pdf-validation-pipeline`。
 - 文档同步前备份：`.backup\20260814_164219_before-success-doc-sync`。
 
@@ -61,7 +63,7 @@
 
 ### 备份与发布
 - 代码备份：.backup\20260723_101954\report_maker.before-wps-orphan-page-fix.py
-- 推荐发布名称：ExcelReportTool_v3.11.5_Windows_x64
+- 该版本发布名称：ExcelReportTool_v3.11.5_Windows_x64
 
 ---
 
@@ -721,23 +723,23 @@ python run_queue.py --dry-run
 
 ## 📊 项目状态
 
-**当前版本**：**v3.11.5**（WPS 分页兜底 + #### 列宽修复）
-**最后更新**：2026-07-23
+**当前版本**：**v3.12.0**（PDF 逐表校验与安全发布）
+**最后更新**：2026-08-14
 **维护者**：朱无理
 **Python版本**：3.8+
 **操作系统**：Windows 10/11
-**依赖库**：openpyxl, pywin32, pywinauto, requests, PyQt5
+**依赖库**：openpyxl, pywin32, pywinauto, requests, PyQt5, PyPDF2
 
 ## 📁 当前文件结构
 
 ```
 F:\myproject\rpt-maker\
-├── report_maker.py          # 主程序 v3.11（含run_pipeline入口）
+├── report_maker.py          # 主程序 v3.12.0（含PDF逐表校验）
 ├── run_queue.py             # CLI批量调度器
-├── gui_app.py               # GUI打包入口 v3.11（PyQt5）
+├── gui_app.py               # GUI打包入口 v3.12.0（PyQt5）
 ├── utils.py                 # 共享工具模块
 ├── dist\                    # exe打包输出目录
-│   └── ExcelReports_GUI_v3.9.exe   # 最终exe（64.4 MB）
+│   └── ExcelReportTool_v3.12.0_Windows_x64.exe   # 最终exe（约66.7 MB）
 ├── queue\                   # 待处理工程队列
 │   └── done\               # 已完成工程
 ├── CHANGELOG.md            # 本文件
@@ -745,4 +747,4 @@ F:\myproject\rpt-maker\
 └── PROJECT_LOG.txt         # 详细开发记录
 ```
 
-*文档最后更新：2026-07-23*
+*文档最后更新：2026-08-14*

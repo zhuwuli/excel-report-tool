@@ -1,8 +1,8 @@
-# Excel汇总表自动处理工具 v3.11.5
+# Excel汇总表自动处理工具 v3.12.0
 
 > 自动把工程监测数据做成 PDF 报表，六步流程一键完成。
 >
-> 当前代码状态：以 v3.11.5 为已发布基线，已加入 2026-08-14 PDF 逐表校验与安全发布修复，下一正式版本号尚未确定。
+> 当前版本：v3.12.0。2026-08-14 完成 PDF 逐表校验与安全发布修复。
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### 双击 exe 运行（最简单）
 
-1. 双击 `dist\ExcelReportTool_v3.11.5_Windows_x64.exe`
+1. 双击 `dist\ExcelReportTool_v3.12.0_Windows_x64.exe`
 2. 选择 Excel 类型（Microsoft Office 或 WPS Office）
 3. 点击"选择文件夹"，找到工程文件夹
 4. 填总期数和各期间隔天数
@@ -48,7 +48,7 @@
 **方式一：直接双击 exe（最简单，推荐）**
 
 1. 进入 `dist\` 文件夹
-2. 双击 `ExcelReportTool_v3.11.5_Windows_x64.exe`
+2. 双击 `ExcelReportTool_v3.12.0_Windows_x64.exe`
 3. 弹出图形界面
 4. 选择 Excel 类型
 5. 点击"选择文件夹" → 找到工程文件夹
@@ -105,7 +105,7 @@ rpt-maker\
 ├── gui_app.py            # GUI打包入口（PyQt5）
 ├── utils.py              # 共享工具模块
 ├── dist\                 # exe输出目录
-│   └── ExcelReportTool_v3.11.5_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
+│   └── ExcelReportTool_v3.12.0_Windows_x64.exe  # 双击exe直接用（无黑框GUI）
 ├── queue\                # 把要处理的工程文件夹放这里！
 │   └── done\            # 处理完的工程会自动移到这里
 ├── .logs\               # 日志文件夹（记录运行过程）
@@ -120,7 +120,7 @@ rpt-maker\
 **你只需要关心 3 个地方：**
 1. **`queue\` 文件夹** - 放要处理的工程
 2. **`queue\done\` 文件夹** - 处理完的工程在这儿
-3. **`dist\ExcelReportTool_v3.11.5_Windows_x64.exe`** - 双击运行（无黑框GUI）
+3. **`dist\ExcelReportTool_v3.12.0_Windows_x64.exe`** - 双击运行（无黑框GUI）
 
 ---
 
@@ -380,7 +380,7 @@ python -m PyInstaller --onefile --clean `
   --hidden-import pywinauto.timings `
   --hidden-import pywinauto.application `
   --hidden-import pywinauto.findwindows `
-  --name "ExcelReportTool_v3.11.5_Windows_x64" gui_app.py
+  --name "ExcelReportTool_v3.12.0_Windows_x64" gui_app.py
 ```
 
 不要在当前环境使用 `--collect-all pywinauto`。如果打包日志显示 `Python environment: F:\anaconda`，说明实际调用了 Anaconda 的 PyInstaller，可能把 pandas、scipy、sklearn、Jupyter 等无关依赖一起收集，导致 exe 从约 66 MB 增长到数百 MB。
@@ -518,7 +518,7 @@ F:\myproject\rpt-maker\.logs\
 ---
 
 ## 📝 版本历史
-### 待发布（2026-08-14）- PDF 逐表校验与安全发布
+### v3.12.0（2026-08-14）- PDF 逐表校验与安全发布
 - 2026-08-13 的分页调整尝试未能解决跨机器导出问题，已经回退，不作为成功版本或发布依据。
 - 2026-08-14 改为逐工作表导出临时 PDF，逐表检查实际页数、`####` 和真正空白页，通过后再按工作表顺序合并。
 - 固定单页表和短篇监测报表会清除残留分页符，并在内存中设置为一页宽、一页高；长表仍保留自然分页。
@@ -526,7 +526,7 @@ F:\myproject\rpt-maker\.logs\
 - 校验失败、中途停止或导出异常时，不覆盖原有正式 PDF，并自动清理临时目录。
 - 第81期和第82期回归样本均恢复为 10 页；代表页面渲染检查无裁切，错误页数、空白页和 `####` 拦截测试通过。
 - 新增 `PyPDF2` 依赖；直接导入可由 PyInstaller 自动收集，无需额外增加隐藏导入参数。
-- 当前仍以 v3.11.5 为发布基线，正式发布前再统一确定版本号、GUI 标题和 EXE 名称。
+- 正式版本号：v3.12.0；GUI 标题版本：v3.12.0；发布文件：`ExcelReportTool_v3.12.0_Windows_x64.exe`。
 
 ### v3.11.5（2026-07-23）- WPS 手工分页与单行夹心页修复
 - 带手工分页符的工作表保留模板原有固定缩放比例，不再统一强制按一页宽重新计算。
@@ -534,7 +534,7 @@ F:\myproject\rpt-maker\.logs\
 - 每次降低 1% 缩放比例，最多尝试 3 次；如果仍未解决，自动恢复模板原缩放比例。
 - #### 列宽修改先保存，PDF 分页参数后设置，避免临时分页配置保存进 Excel。
 - 某些 WPS 版本无法读取分页符时，自动退回原有的一页宽处理逻辑。
-- 当前推荐发布名称：ExcelReportTool_v3.11.5_Windows_x64。
+- 该版本发布名称：ExcelReportTool_v3.11.5_Windows_x64。
 
 ### v3.11.4（2026-07-23）- WPS 签字备注尾部纵向跨页修复
 - 检测第二页只剩少量签字、备注内容的情况。
@@ -908,17 +908,17 @@ F:\myproject\rpt-maker\.logs\
 
 | 项目 | 内容 |
 |------|------|
-| 当前版本 | **v3.11.5** |
-| 最后更新 | 2026-07-23 |
+| 当前版本 | **v3.12.0** |
+| 最后更新 | 2026-08-14 |
 | 维护者 | 朱无理 |
-| 项目历时 | 2026-04-08 至 2026-07-23 |
+| 项目历时 | 2026-04-08 至 2026-08-14 |
 | Python版本 | 3.8+ |
 | 操作系统 | Windows 10/11 |
-| 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz |
+| 依赖库 | openpyxl, pywin32, pywinauto, requests, PyQt5, pytz, PyPDF2 |
 
 ---
 
-*最后更新：2026-07-23*
-*版本：v3.11.5*
+*最后更新：2026-08-14*
+*版本：v3.12.0*
 
 </details>
